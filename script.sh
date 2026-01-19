@@ -2,11 +2,12 @@
 set -e
 
 VERSION_FILE="/usr/local/share/dbos-v.txt"
-VERSIONE_UPDATE="0.4"
+VERSIONE_UPDATE="0.5"
 SCRIPT_PATH="$(realpath "$0")"
 
 update() {
     echo "🔄 Aggiornamento in corso..."
+    sudo rm /usr/local/bin/db
     
     cat > "/usr/local/bin/db" << 'EOF'
 #!/bin/bash
@@ -16,7 +17,7 @@ update() {
 
 KALI_CONTAINER="kali"
 KALI_ROOT="/var/lib/machines/kali"
-VERSION="1.0.0"
+VERSION="2.0.0"
 
 show_help() {
     echo "DB Package Manager v${VERSION}"
@@ -29,14 +30,24 @@ show_help() {
     echo "    1    - Arch Linux (pacman)"
     echo "    2    - Kali container (apt in systemd-nspawn)"
     echo
-    echo "OPERAZIONI:"
-    echo "    -S   - Installa pacchetto/i"
-    echo "    -R   - Rimuove pacchetto/i"
-    echo "    -Ss  - Cerca pacchetto/i"
-    echo "    -Syu - Aggiorna sistema"
-    echo "    -Si  - Info pacchetto"
-    echo "    -Q   - Lista pacchetti installati"
-    echo "    -Qe  - Lista pacchetti installati esplicitamente"
+    echo "OPERAZIONI PRINCIPALI:"
+    echo "    -S      - Installa pacchetto/i"
+    echo "    -R      - Rimuove pacchetto/i"
+    echo "    -Rns    - Rimozione completa (con config e dipendenze)"
+    echo "    -Ss     - Cerca pacchetto/i"
+    echo "    -Syu    - Aggiorna sistema"
+    echo "    -Si     - Info pacchetto"
+    echo
+    echo "QUERY PACCHETTI:"
+    echo "    -Q      - Lista pacchetti installati"
+    echo "    -Qe     - Lista pacchetti installati esplicitamente"
+    echo "    -Ql     - Lista file di un pacchetto"
+    echo "    -Qo     - Trova pacchetto che possiede un file"
+    echo "    -Qdt    - Lista pacchetti orfani"
+    echo
+    echo "MANUTENZIONE:"
+    echo "    -Sc     - Pulizia cache pacchetti"
+    echo "    status  - Mostra stato del sistema"
     echo
     echo "ESEMPI:"
     echo "    sudo db -S 1 vim neofetch        # Installa vim e neofetch su Arch"
@@ -44,7 +55,13 @@ show_help() {
     echo "    sudo db -Ss 1 firefox            # Cerca firefox su Arch"
     echo "    sudo db -Syu 2                   # Aggiorna Kali"
     echo "    sudo db -R 1 vim                 # Rimuove vim da Arch"
+    echo "    sudo db -Rns 2 nmap              # Rimuove completamente nmap da Kali"
     echo "    sudo db -Q 2                     # Lista pacchetti Kali"
+    echo "    sudo db -Ql 1 vim                # Lista file di vim su Arch"
+    echo "    sudo db -Qo 1 /usr/bin/vim       # Trova pacchetto che possiede vim"
+    echo "    sudo db -Qdt 1                   # Lista pacchetti orfani Arch"
+    echo "    sudo db -Sc 2                    # Pulisci cache Kali"
+    echo "    sudo db status 1                 # Stato sistema Arch"
 }
 
 check_root() {
@@ -62,15 +79,32 @@ check_container() {
     fi
 }
 
-# Operazioni Arch (pacman)
+# ============================================================================
+# OPERAZIONI ARCH (pacman)
+# ============================================================================
+
 arch_install() {
     echo "[ARCH] Installazione: $@"
-    pacman -S --noconfirm "$@"
+    if ! pacman -S --noconfirm "$@"; then
+        echo "Errore: installazione fallita"
+        return 1
+    fi
 }
 
 arch_remove() {
     echo "[ARCH] Rimozione: $@"
-    pacman -R --noconfirm "$@"
+    if ! pacman -R --noconfirm "$@"; then
+        echo "Errore: rimozione fallita"
+        return 1
+    fi
+}
+
+arch_purge() {
+    echo "[ARCH] Rimozione completa (con dipendenze): $@"
+    if ! pacman -Rns --noconfirm "$@"; then
+        echo "Errore: rimozione completa fallita"
+        return 1
+    fi
 }
 
 arch_search() {
@@ -80,7 +114,10 @@ arch_search() {
 
 arch_update() {
     echo "[ARCH] Aggiornamento sistema"
-    pacman -Syu --noconfirm
+    if ! pacman -Syu --noconfirm; then
+        echo "Errore: aggiornamento fallito"
+        return 1
+    fi
 }
 
 arch_info() {
@@ -98,22 +135,78 @@ arch_list_explicit() {
     pacman -Qe
 }
 
-# Operazioni Kali (apt in container)
+arch_list_files() {
+    echo "[ARCH] File del pacchetto: $@"
+    pacman -Ql "$@"
+}
+
+arch_owns() {
+    echo "[ARCH] Ricerca proprietario: $@"
+    pacman -Qo "$@"
+}
+
+arch_orphans() {
+    echo "[ARCH] Pacchetti orfani:"
+    pacman -Qdt 2>/dev/null || echo "Nessun pacchetto orfano trovato"
+}
+
+arch_clean() {
+    echo "[ARCH] Pulizia cache pacchetti"
+    if ! pacman -Sc --noconfirm; then
+        echo "Errore: pulizia cache fallita"
+        return 1
+    fi
+}
+
+arch_status() {
+    echo "[ARCH] Stato sistema:"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "Pacchetti installati: $(pacman -Q | wc -l)"
+    local updates=$(pacman -Qu 2>/dev/null | wc -l)
+    echo "Aggiornamenti disponibili: $updates"
+    local orphans=$(pacman -Qdt 2>/dev/null | wc -l)
+    echo "Pacchetti orfani: $orphans"
+    echo "Cache size: $(du -sh /var/cache/pacman/pkg 2>/dev/null | cut -f1)"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+}
+
+# ============================================================================
+# OPERAZIONI KALI (apt in container)
+# ============================================================================
+
 kali_install() {
     echo "[KALI] Installazione: $@"
-    systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "
+    if ! systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "
         export DEBIAN_FRONTEND=noninteractive
         apt-get update
         apt-get install -y $@
-    "
+    "; then
+        echo "Errore: installazione fallita"
+        return 1
+    fi
 }
 
 kali_remove() {
     echo "[KALI] Rimozione: $@"
-    systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "
+    if ! systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "
         export DEBIAN_FRONTEND=noninteractive
         apt-get remove -y $@
-    "
+    "; then
+        echo "Errore: rimozione fallita"
+        return 1
+    fi
+}
+
+kali_purge() {
+    echo "[KALI] Rimozione completa (con config): $@"
+    if ! systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get purge -y $@
+        apt-get autoremove -y
+    "; then
+        echo "Errore: rimozione completa fallita"
+        return 1
+    fi
 }
 
 kali_search() {
@@ -123,14 +216,17 @@ kali_search() {
 
 kali_update() {
     echo "[KALI] Aggiornamento sistema"
-    systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "
+    if ! systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "
         export DEBIAN_FRONTEND=noninteractive
         apt-get update
         apt-get upgrade -y
         apt-get dist-upgrade -y
         apt-get autoremove -y
         apt-get autoclean
-    "
+    "; then
+        echo "Errore: aggiornamento fallito"
+        return 1
+    fi
 }
 
 kali_info() {
@@ -148,9 +244,59 @@ kali_list_explicit() {
     systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "apt-mark showmanual"
 }
 
-# Main logic
+kali_list_files() {
+    echo "[KALI] File del pacchetto: $@"
+    systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "dpkg -L $@"
+}
+
+kali_owns() {
+    echo "[KALI] Ricerca proprietario: $@"
+    systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "dpkg -S $@"
+}
+
+kali_orphans() {
+    echo "[KALI] Pacchetti orfani:"
+    systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "
+        if command -v deborphan &> /dev/null; then
+            deborphan
+        else
+            echo 'deborphan non installato. Installa con: sudo db -S 2 deborphan'
+        fi
+    "
+}
+
+kali_clean() {
+    echo "[KALI] Pulizia cache pacchetti"
+    if ! systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "
+        apt-get clean
+        apt-get autoclean
+        apt-get autoremove -y
+    "; then
+        echo "Errore: pulizia cache fallita"
+        return 1
+    fi
+}
+
+kali_status() {
+    echo "[KALI] Stato sistema:"
+    systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "
+        echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+        echo \"Pacchetti installati: \$(dpkg -l | grep ^ii | wc -l)\"
+        apt-get update > /dev/null 2>&1
+        updates=\$(apt list --upgradable 2>/dev/null | grep -c upgradable)
+        echo \"Aggiornamenti disponibili: \$updates\"
+        cache_size=\$(du -sh /var/cache/apt/archives 2>/dev/null | cut -f1)
+        echo \"Cache size: \$cache_size\"
+        echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+    "
+}
+
+# ============================================================================
+# MAIN LOGIC
+# ============================================================================
+
 main() {
-    if [[ $# -lt 2 ]]; then
+    if [[ $# -lt 1 ]]; then
         show_help
         exit 1
     fi
@@ -158,6 +304,28 @@ main() {
     check_root
 
     OPERATION=$1
+    
+    # Gestione comando 'status' speciale
+    if [[ "$OPERATION" == "status" ]]; then
+        if [[ $# -lt 2 ]]; then
+            echo "Errore: specifica target (1=Arch, 2=Kali)"
+            exit 1
+        fi
+        TARGET=$2
+        if [[ "$TARGET" == "2" ]]; then
+            check_container
+            kali_status
+        else
+            arch_status
+        fi
+        exit 0
+    fi
+
+    if [[ $# -lt 2 ]]; then
+        show_help
+        exit 1
+    fi
+
     TARGET=$2
     shift 2
     PACKAGES="$@"
@@ -189,6 +357,13 @@ main() {
             fi
             [[ "$TARGET" == "1" ]] && arch_remove $PACKAGES || kali_remove $PACKAGES
             ;;
+        -Rns)
+            if [[ -z "$PACKAGES" ]]; then
+                echo "Errore: specifica almeno un pacchetto"
+                exit 1
+            fi
+            [[ "$TARGET" == "1" ]] && arch_purge $PACKAGES || kali_purge $PACKAGES
+            ;;
         -Ss)
             if [[ -z "$PACKAGES" ]]; then
                 echo "Errore: specifica un termine di ricerca"
@@ -212,6 +387,26 @@ main() {
         -Qe)
             [[ "$TARGET" == "1" ]] && arch_list_explicit || kali_list_explicit
             ;;
+        -Ql)
+            if [[ -z "$PACKAGES" ]]; then
+                echo "Errore: specifica un pacchetto"
+                exit 1
+            fi
+            [[ "$TARGET" == "1" ]] && arch_list_files $PACKAGES || kali_list_files $PACKAGES
+            ;;
+        -Qo)
+            if [[ -z "$PACKAGES" ]]; then
+                echo "Errore: specifica un file"
+                exit 1
+            fi
+            [[ "$TARGET" == "1" ]] && arch_owns $PACKAGES || kali_owns $PACKAGES
+            ;;
+        -Qdt)
+            [[ "$TARGET" == "1" ]] && arch_orphans || kali_orphans
+            ;;
+        -Sc)
+            [[ "$TARGET" == "1" ]] && arch_clean || kali_clean
+            ;;
         -h|--help)
             show_help
             ;;
@@ -227,7 +422,7 @@ main "$@"
 EOF
     
     sudo chmod +x /usr/local/bin/db
-    echo -e "\e[32m[db installed]\e[0m"
+    echo -e "\e[32m[db v2.0.0 installed]\e[0m"
 
     echo "$VERSIONE_UPDATE" > "$VERSION_FILE"
     echo "✅ Completato!"
