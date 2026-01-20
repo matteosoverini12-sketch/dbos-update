@@ -132,7 +132,9 @@ check_container() {
 arch_install() {
     log_operation "ARCH: Installazione $@"
     echo "[ARCH] Installazione: $@"
-    if ! pacman -S --noconfirm "$@"; then
+    local confirm_flag=""
+    [[ "$NOCONFIRM" == true ]] && confirm_flag="--noconfirm"
+    if ! pacman -S $confirm_flag "$@"; then
         echo "Errore: installazione fallita"
         log_operation "ARCH: Installazione FALLITA $@"
         return 1
@@ -143,7 +145,9 @@ arch_install() {
 arch_remove() {
     log_operation "ARCH: Rimozione $@"
     echo "[ARCH] Rimozione: $@"
-    if ! pacman -R --noconfirm "$@"; then
+    local confirm_flag=""
+    [[ "$NOCONFIRM" == true ]] && confirm_flag="--noconfirm"
+    if ! pacman -R $confirm_flag "$@"; then
         echo "Errore: rimozione fallita"
         log_operation "ARCH: Rimozione FALLITA $@"
         return 1
@@ -154,7 +158,9 @@ arch_remove() {
 arch_purge() {
     log_operation "ARCH: Rimozione completa $@"
     echo "[ARCH] Rimozione completa (con dipendenze): $@"
-    if ! pacman -Rns --noconfirm "$@"; then
+    local confirm_flag=""
+    [[ "$NOCONFIRM" == true ]] && confirm_flag="--noconfirm"
+    if ! pacman -Rns $confirm_flag "$@"; then
         echo "Errore: rimozione completa fallita"
         log_operation "ARCH: Rimozione completa FALLITA $@"
         return 1
@@ -165,7 +171,9 @@ arch_purge() {
 arch_install_local() {
     log_operation "ARCH: Installazione locale $@"
     echo "[ARCH] Installazione locale: $@"
-    if ! pacman -U --noconfirm "$@"; then
+    local confirm_flag=""
+    [[ "$NOCONFIRM" == true ]] && confirm_flag="--noconfirm"
+    if ! pacman -U $confirm_flag "$@"; then
         echo "Errore: installazione locale fallita"
         log_operation "ARCH: Installazione locale FALLITA $@"
         return 1
@@ -176,7 +184,9 @@ arch_install_local() {
 arch_download() {
     log_operation "ARCH: Download $@"
     echo "[ARCH] Download pacchetto: $@"
-    if ! pacman -Sw --noconfirm "$@"; then
+    local confirm_flag=""
+    [[ "$NOCONFIRM" == true ]] && confirm_flag="--noconfirm"
+    if ! pacman -Sw $confirm_flag "$@"; then
         echo "Errore: download fallito"
         return 1
     fi
@@ -190,7 +200,9 @@ arch_search() {
 arch_update() {
     log_operation "ARCH: Aggiornamento sistema"
     echo "[ARCH] Aggiornamento sistema"
-    if ! pacman -Syu --noconfirm; then
+    local confirm_flag=""
+    [[ "$NOCONFIRM" == true ]] && confirm_flag="--noconfirm"
+    if ! pacman -Syu $confirm_flag; then
         echo "Errore: aggiornamento fallito"
         log_operation "ARCH: Aggiornamento FALLITO"
         return 1
@@ -288,7 +300,9 @@ arch_mark_explicit() {
 arch_clean() {
     log_operation "ARCH: Pulizia cache"
     echo "[ARCH] Pulizia cache pacchetti"
-    if ! pacman -Sc --noconfirm; then
+    local confirm_flag=""
+    [[ "$NOCONFIRM" == true ]] && confirm_flag="--noconfirm"
+    if ! pacman -Sc $confirm_flag; then
         echo "Errore: pulizia cache fallita"
         return 1
     fi
@@ -297,7 +311,9 @@ arch_clean() {
 arch_clean_all() {
     log_operation "ARCH: Pulizia completa cache"
     echo "[ARCH] Pulizia COMPLETA cache (rimuove tutto)"
-    if ! pacman -Scc --noconfirm; then
+    local confirm_flag=""
+    [[ "$NOCONFIRM" == true ]] && confirm_flag="--noconfirm"
+    if ! pacman -Scc $confirm_flag; then
         echo "Errore: pulizia completa cache fallita"
         return 1
     fi
@@ -368,21 +384,37 @@ kali_purge() {
 kali_install_local() {
     log_operation "KALI: Installazione locale $@"
     echo "[KALI] Installazione locale: $@"
-    # Copia file .deb nel container
+    
+    # Stringa per salvare i nomi dei file
+    local deb_files=""
+    
+    # Copia file .deb nel container (usa /root invece di /tmp)
     for pkg in "$@"; do
-        if [[ ! -f "$pkg" ]]; then
-            echo "Errore: file $pkg non trovato"
+        # Converti percorso relativo in assoluto se necessario
+        local full_path
+        if [[ "$pkg" = /* ]]; then
+            full_path="$pkg"
+        else
+            full_path="$(pwd)/$pkg"
+        fi
+        
+        if [[ ! -f "$full_path" ]]; then
+            echo "Errore: file $full_path non trovato"
             return 1
         fi
-        cp "$pkg" "$KALI_ROOT/tmp/"
+        
+        local basename_file=$(basename "$full_path")
+        echo "Copia $full_path → $KALI_ROOT/root/$basename_file"
+        cp "$full_path" "$KALI_ROOT/root/"
+        deb_files="$deb_files /root/$basename_file"
     done
     
+    # Installa i pacchetti (usa percorso assoluto /root/)
     if ! systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "
         export DEBIAN_FRONTEND=noninteractive
-        cd /tmp
-        dpkg -i $@
+        dpkg -i $deb_files
         apt-get install -f -y
-        rm -f $@
+        rm -f $deb_files
     "; then
         echo "Errore: installazione locale fallita"
         log_operation "KALI: Installazione locale FALLITA $@"
@@ -675,7 +707,10 @@ arch_fix() {
 # ============================================================================
 
 main() {
-    # Parse opzioni globali
+    # Array per salvare gli argomenti originali
+    local ORIGINAL_ARGS=("$@")
+    
+    # Parse opzioni globali PRIMA di tutto
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --noconfirm)
@@ -718,8 +753,11 @@ main() {
             if [[ "$TARGET" == "2" ]]; then
                 check_container
                 kali_status
-            else
+            elif [[ "$TARGET" == "1" ]]; then
                 arch_status
+            else
+                echo "Errore: target non valido"
+                exit 1
             fi
             exit 0
             ;;
@@ -753,8 +791,11 @@ main() {
             if [[ "$TARGET" == "2" ]]; then
                 check_container
                 kali_fix
-            else
+            elif [[ "$TARGET" == "1" ]]; then
                 arch_fix
+            else
+                echo "Errore: target non valido"
+                exit 1
             fi
             exit 0
             ;;
@@ -787,132 +828,228 @@ main() {
                 echo "Errore: specifica almeno un pacchetto"
                 exit 1
             fi
-            [[ "$TARGET" == "1" ]] && arch_install $PACKAGES || kali_install $PACKAGES
+            if [[ "$TARGET" == "1" ]]; then
+                arch_install $PACKAGES
+            else
+                kali_install $PACKAGES
+            fi
             ;;
         -R)
             if [[ -z "$PACKAGES" ]]; then
                 echo "Errore: specifica almeno un pacchetto"
                 exit 1
             fi
-            [[ "$TARGET" == "1" ]] && arch_remove $PACKAGES || kali_remove $PACKAGES
+            if [[ "$TARGET" == "1" ]]; then
+                arch_remove $PACKAGES
+            else
+                kali_remove $PACKAGES
+            fi
             ;;
         -Rns)
             if [[ -z "$PACKAGES" ]]; then
                 echo "Errore: specifica almeno un pacchetto"
                 exit 1
             fi
-            [[ "$TARGET" == "1" ]] && arch_purge $PACKAGES || kali_purge $PACKAGES
+            if [[ "$TARGET" == "1" ]]; then
+                arch_purge $PACKAGES
+            else
+                kali_purge $PACKAGES
+            fi
             ;;
         -U)
             if [[ -z "$PACKAGES" ]]; then
                 echo "Errore: specifica almeno un file pacchetto"
                 exit 1
             fi
-            [[ "$TARGET" == "1" ]] && arch_install_local $PACKAGES || kali_install_local $PACKAGES
+            if [[ "$TARGET" == "1" ]]; then
+                arch_install_local $PACKAGES
+            else
+                kali_install_local $PACKAGES
+            fi
             ;;
         -Sw)
             if [[ -z "$PACKAGES" ]]; then
                 echo "Errore: specifica almeno un pacchetto"
                 exit 1
             fi
-            [[ "$TARGET" == "1" ]] && arch_download $PACKAGES || kali_download $PACKAGES
+            if [[ "$TARGET" == "1" ]]; then
+                arch_download $PACKAGES
+            else
+                kali_download $PACKAGES
+            fi
             ;;
         -Ss)
             if [[ -z "$PACKAGES" ]]; then
                 echo "Errore: specifica un termine di ricerca"
                 exit 1
             fi
-            [[ "$TARGET" == "1" ]] && arch_search $PACKAGES || kali_search $PACKAGES
+            if [[ "$TARGET" == "1" ]]; then
+                arch_search $PACKAGES
+            else
+                kali_search $PACKAGES
+            fi
             ;;
         -Syu)
-            [[ "$TARGET" == "1" ]] && arch_update || kali_update
+            if [[ "$TARGET" == "1" ]]; then
+                arch_update
+            else
+                kali_update
+            fi
             ;;
         -Syy)
-            [[ "$TARGET" == "1" ]] && arch_refresh || kali_refresh
+            if [[ "$TARGET" == "1" ]]; then
+                arch_refresh
+            else
+                kali_refresh
+            fi
             ;;
         -Qu)
-            [[ "$TARGET" == "1" ]] && arch_upgradable || kali_upgradable
+            if [[ "$TARGET" == "1" ]]; then
+                arch_upgradable
+            else
+                kali_upgradable
+            fi
             ;;
         -Si)
             if [[ -z "$PACKAGES" ]]; then
                 echo "Errore: specifica un pacchetto"
                 exit 1
             fi
-            [[ "$TARGET" == "1" ]] && arch_info $PACKAGES || kali_info $PACKAGES
+            if [[ "$TARGET" == "1" ]]; then
+                arch_info $PACKAGES
+            else
+                kali_info $PACKAGES
+            fi
             ;;
         -Qi)
             if [[ -z "$PACKAGES" ]]; then
                 echo "Errore: specifica un pacchetto"
                 exit 1
             fi
-            [[ "$TARGET" == "1" ]] && arch_info_installed $PACKAGES || kali_info_installed $PACKAGES
+            if [[ "$TARGET" == "1" ]]; then
+                arch_info_installed $PACKAGES
+            else
+                kali_info_installed $PACKAGES
+            fi
             ;;
         -Qii)
             if [[ -z "$PACKAGES" ]]; then
                 echo "Errore: specifica un pacchetto"
                 exit 1
             fi
-            [[ "$TARGET" == "1" ]] && arch_info_detailed $PACKAGES || kali_info_detailed $PACKAGES
+            if [[ "$TARGET" == "1" ]]; then
+                arch_info_detailed $PACKAGES
+            else
+                kali_info_detailed $PACKAGES
+            fi
             ;;
         -Qc)
             if [[ -z "$PACKAGES" ]]; then
                 echo "Errore: specifica un pacchetto"
                 exit 1
             fi
-            [[ "$TARGET" == "1" ]] && arch_changelog $PACKAGES || kali_changelog $PACKAGES
+            if [[ "$TARGET" == "1" ]]; then
+                arch_changelog $PACKAGES
+            else
+                kali_changelog $PACKAGES
+            fi
             ;;
         -Q)
-            [[ "$TARGET" == "1" ]] && arch_list || kali_list
+            if [[ "$TARGET" == "1" ]]; then
+                arch_list
+            else
+                kali_list
+            fi
             ;;
         -Qe)
-            [[ "$TARGET" == "1" ]] && arch_list_explicit || kali_list_explicit
+            if [[ "$TARGET" == "1" ]]; then
+                arch_list_explicit
+            else
+                kali_list_explicit
+            fi
             ;;
         -Qm)
-            [[ "$TARGET" == "1" ]] && arch_foreign || kali_foreign
+            if [[ "$TARGET" == "1" ]]; then
+                arch_foreign
+            else
+                kali_foreign
+            fi
             ;;
         -Ql)
             if [[ -z "$PACKAGES" ]]; then
                 echo "Errore: specifica un pacchetto"
                 exit 1
             fi
-            [[ "$TARGET" == "1" ]] && arch_list_files $PACKAGES || kali_list_files $PACKAGES
+            if [[ "$TARGET" == "1" ]]; then
+                arch_list_files $PACKAGES
+            else
+                kali_list_files $PACKAGES
+            fi
             ;;
         -Qo)
             if [[ -z "$PACKAGES" ]]; then
                 echo "Errore: specifica un file"
                 exit 1
             fi
-            [[ "$TARGET" == "1" ]] && arch_owns $PACKAGES || kali_owns $PACKAGES
+            if [[ "$TARGET" == "1" ]]; then
+                arch_owns $PACKAGES
+            else
+                kali_owns $PACKAGES
+            fi
             ;;
         -Qdt)
-            [[ "$TARGET" == "1" ]] && arch_orphans || kali_orphans
+            if [[ "$TARGET" == "1" ]]; then
+                arch_orphans
+            else
+                kali_orphans
+            fi
             ;;
         -Qk)
             if [[ -z "$PACKAGES" ]]; then
                 echo "Errore: specifica un pacchetto"
                 exit 1
             fi
-            [[ "$TARGET" == "1" ]] && arch_check $PACKAGES || kali_check $PACKAGES
+            if [[ "$TARGET" == "1" ]]; then
+                arch_check $PACKAGES
+            else
+                kali_check $PACKAGES
+            fi
             ;;
         -D)
             if [[ -z "$PACKAGES" ]]; then
                 echo "Errore: specifica almeno un pacchetto"
                 exit 1
             fi
-            [[ "$TARGET" == "1" ]] && arch_mark_dep $PACKAGES || kali_mark_dep $PACKAGES
+            if [[ "$TARGET" == "1" ]]; then
+                arch_mark_dep $PACKAGES
+            else
+                kali_mark_dep $PACKAGES
+            fi
             ;;
         -De)
             if [[ -z "$PACKAGES" ]]; then
                 echo "Errore: specifica almeno un pacchetto"
                 exit 1
             fi
-            [[ "$TARGET" == "1" ]] && arch_mark_explicit $PACKAGES || kali_mark_explicit $PACKAGES
+            if [[ "$TARGET" == "1" ]]; then
+                arch_mark_explicit $PACKAGES
+            else
+                kali_mark_explicit $PACKAGES
+            fi
             ;;
         -Sc)
-            [[ "$TARGET" == "1" ]] && arch_clean || kali_clean
+            if [[ "$TARGET" == "1" ]]; then
+                arch_clean
+            else
+                kali_clean
+            fi
             ;;
         -Scc)
-            [[ "$TARGET" == "1" ]] && arch_clean_all || kali_clean_all
+            if [[ "$TARGET" == "1" ]]; then
+                arch_clean_all
+            else
+                kali_clean_all
+            fi
             ;;
         -h|--help)
             show_help
