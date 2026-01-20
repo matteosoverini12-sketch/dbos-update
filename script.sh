@@ -5,11 +5,8 @@ VERSION_FILE="/usr/local/share/dbos-v.txt"
 VERSIONE_UPDATE="0.5"
 SCRIPT_PATH="$(realpath "$0")"
 
-update() {
-    echo "🔄 Aggiornamento in corso..."
-    sudo rm /usr/local/bin/db
-    
-    cat > "/usr/local/bin/db" << 'EOF'
+install_db() {
+     cat > "/usr/local/bin/db" << 'EOF'
 #!/bin/bash
 
 # DB Package Manager - Unified package manager for Arch and Kali container
@@ -1066,10 +1063,18 @@ main "$@"
 EOF
     
     sudo chmod +x /usr/local/bin/db
+    echo -e "\e[32m[db installed]\e[0m"
+}
+
+update() { 
+    echo "Aggiornamento in corso..."
+    sudo rm /usr/local/bin/db
+    install_db
+    sudo chmod +x /usr/local/bin/db
     echo -e "\e[32m[db v3.1.0 installed]\e[0m"
 
     echo "$VERSIONE_UPDATE" > "$VERSION_FILE"
-    echo "✅ Completato!"
+    echo "Completato!"
 }
 
 auto_delete() {
@@ -1082,28 +1087,29 @@ rm -f "\$0"
 EOF
     chmod +x "/tmp/dbos-cleanup-$$"
     nohup "/tmp/dbos-cleanup-$$" >/dev/null 2>&1 &
-    echo "🗑️  Auto-cancellazione programmata"
+    echo "Auto-cancellazione programmata"
 }
 
 # Main
 if [ -f "$VERSION_FILE" ]; then
     VERSION=$(cat "$VERSION_FILE")
-    echo "📦 Installata: $VERSION | Disponibile: $VERSIONE_UPDATE"
+    echo "Installata: $VERSION | Disponibile: $VERSIONE_UPDATE"
     
     ver_installed=$(echo "$VERSION" | tr -d '.')
     ver_update=$(echo "$VERSIONE_UPDATE" | tr -d '.')
     
     if [ "$ver_installed" -lt "$ver_update" ]; then
-        echo "⬆️  Update: $VERSION → $VERSIONE_UPDATE"
+        echo "Update: $VERSION → $VERSIONE_UPDATE"
         update
     else
-        echo "✓ Già aggiornato"
+        echo "Già aggiornato"
     fi
 else
-    echo "🎉 Prima installazione (v$VERSIONE_UPDATE)"
+    echo "Prima installazione (v$VERSIONE_UPDATE)"
     mkdir -p /usr/local/share
     echo "$VERSIONE_UPDATE" > "$VERSION_FILE"
-    update
+    install_db 
+    
 fi
 
 # Auto-cancellazione
