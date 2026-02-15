@@ -50,7 +50,7 @@ exit $EXIT_CODE
 EOF
 
 cat > "/usr/local/bin/pycompress.py" << 'EOF'
-     import zipfile
+import zipfile
 import os
 import sys
 
