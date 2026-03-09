@@ -2,7 +2,7 @@
 set -e
 
 VERSION_FILE="/usr/local/share/dbos-v.txt"
-VERSIONE_UPDATE="0.6"
+VERSIONE_UPDATE="0.7"
 SCRIPT_PATH="$(realpath "$0")"
 
 install_pycompress() {
@@ -10,42 +10,25 @@ install_pycompress() {
 #!/bin/bash
 
 # Script wrapper per pycompress
-# Copia temporaneamente pycompress.py nella directory corrente, lo esegue e poi lo rimuove
-
-# Percorso dello script originale
 ORIGINAL_SCRIPT="/usr/local/bin/pycompress.py"
-
-# Directory di lavoro corrente
 WORK_DIR="$(pwd)"
-
-# Nome del file temporaneo nella directory corrente
 TEMP_SCRIPT="$WORK_DIR/pycompress.py"
 
-# Controlla che lo script originale esista
 if [ ! -f "$ORIGINAL_SCRIPT" ]; then
     echo "Errore: $ORIGINAL_SCRIPT non trovato!"
     exit 1
 fi
 
-# Copia lo script nella directory corrente
 cp "$ORIGINAL_SCRIPT" "$TEMP_SCRIPT"
 
-# Controlla che la copia sia andata a buon fine
 if [ $? -ne 0 ]; then
     echo "Errore durante la copia dello script!"
     exit 1
 fi
 
-# Esegue lo script con gli argomenti passati
 python3 "$TEMP_SCRIPT" "$@"
-
-# Salva il codice di uscita del comando python
 EXIT_CODE=$?
-
-# Rimuove lo script temporaneo
 rm -f "$TEMP_SCRIPT"
-
-# Esce con lo stesso codice di uscita del comando python
 exit $EXIT_CODE
 EOF
 
@@ -56,14 +39,12 @@ import os
 import sys
 
 def pycompress(target_folder, main_file):
-    # Converti in percorsi assoluti
     target_folder = os.path.abspath(target_folder)
     
     folder_name = os.path.basename(os.path.normpath(target_folder))
     zip_name = f"{folder_name}.pycomp"
     runner_name = f"{folder_name}.py"
 
-    # Creazione iniziale dello ZIP
     with zipfile.ZipFile(zip_name, 'w', zipfile.ZIP_STORED) as zipf:
         for root, dirs, files in os.walk(target_folder):
             for file in files:
@@ -71,7 +52,6 @@ def pycompress(target_folder, main_file):
                 arcname = os.path.relpath(file_path, target_folder)
                 zipf.write(file_path, arcname)
     
-    # Launcher con VERSION CHECK (non download!)
     runner_content = f"""import zipfile
 import os
 import subprocess
@@ -81,13 +61,11 @@ import tempfile
 import platform
 import re
 
-# Percorsi assoluti basati sulla posizione dello script
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 zip_file = os.path.join(SCRIPT_DIR, "{zip_name}")
 main_script = "{main_file}"
 
 def parse_python_version(req_file):
-    \"\"\"Legge versione Python da requirements.txt (pyv[...])\"\"\"
     if not os.path.exists(req_file):
         return None
     with open(req_file, 'r') as f:
@@ -99,19 +77,16 @@ def parse_python_version(req_file):
     return None
 
 def parse_version_tuple(version_str):
-    \"\"\"Converte '3.13.1' in (3, 13, 1)\"\"\"
     parts = version_str.split('.')
     return tuple(int(p) for p in parts if p.isdigit())
 
 def check_python_version(requirement):
-    \"\"\"Verifica se Python di sistema soddisfa i requisiti\"\"\"
     if requirement == "os":
-        return True, None  # pyv[os] = accetta qualsiasi versione
+        return True, None
     
     current = sys.version_info
     current_str = f"{{current.major}}.{{current.minor}}.{{current.micro}}"
     
-    # pyv[<3.13.5] = versione deve essere < 3.13.5
     if requirement.startswith('<'):
         required_ver = parse_version_tuple(requirement[1:])
         if current[:len(required_ver)] < required_ver:
@@ -119,7 +94,6 @@ def check_python_version(requirement):
         else:
             return False, f"Richiede Python < {{requirement[1:]}}, hai {{current_str}}"
     
-    # pyv[>3.13.5] = versione deve essere >= 3.13.5
     elif requirement.startswith('>'):
         required_ver = parse_version_tuple(requirement[1:])
         if current[:len(required_ver)] >= required_ver:
@@ -127,10 +101,8 @@ def check_python_version(requirement):
         else:
             return False, f"Richiede Python >= {{requirement[1:]}}, hai {{current_str}}"
     
-    # pyv[3.13.1] = versione esatta (match su major.minor)
     else:
         required_ver = parse_version_tuple(requirement)
-        # Match su major.minor, tollerante su micro
         if len(required_ver) >= 2:
             if current.major == required_ver[0] and current.minor == required_ver[1]:
                 return True, None
@@ -140,7 +112,6 @@ def check_python_version(requirement):
             return True, None
 
 def save_changes_back(extract_dir):
-    \"\"\"Salva modifiche nello ZIP (atomic)\"\"\"
     print(f"[*] Salvataggio modifiche...")
     temp_zip = zip_file + ".tmp"
     with zipfile.ZipFile(temp_zip, 'w', zipfile.ZIP_STORED) as zipf:
@@ -149,26 +120,21 @@ def save_changes_back(extract_dir):
                 file_path = os.path.join(root, file)
                 arcname = os.path.relpath(file_path, extract_dir)
                 zipf.write(file_path, arcname)
-    # Usa os.replace invece di shutil.move per essere atomico
     os.replace(temp_zip, zip_file)
 
 def install_deps(extract_dir):
-    \"\"\"Installa dipendenze con pip (mostra output)\"\"\"
     req_file = os.path.join(extract_dir, "requirements.txt")
     if not os.path.exists(req_file):
         return
     
-    # Filtra le righe pyv[...] dal requirements.txt
     temp_req = os.path.join(extract_dir, "requirements_pip.txt")
     with open(req_file, 'r') as f_in:
         with open(temp_req, 'w') as f_out:
             for line in f_in:
-                # Salta righe pyv[...], vuote o commenti
                 stripped = line.strip()
                 if stripped and not stripped.startswith('#') and not re.match(r'pyv\\[', stripped):
                     f_out.write(line)
     
-    # Controlla se ci sono pacchetti da installare
     if os.path.getsize(temp_req) == 0:
         os.remove(temp_req)
         return
@@ -176,10 +142,8 @@ def install_deps(extract_dir):
     print("[*] Installazione dipendenze...")
     print("=" * 60)
     
-    # Usa --user per installare senza permessi root se necessario
     cmd = [sys.executable, "-m", "pip", "install", "-r", temp_req]
     
-    # Su Linux potrebbe servire --break-system-packages
     if platform.system() != "Windows":
         cmd.append("--break-system-packages")
     
@@ -191,7 +155,6 @@ def install_deps(extract_dir):
         print("=" * 60)
         print("[!] ATTENZIONE: Alcune dipendenze potrebbero non essere installate")
     finally:
-        # Rimuovi file temporaneo
         if os.path.exists(temp_req):
             os.remove(temp_req)
 
@@ -207,12 +170,10 @@ def main():
     extract_dir = tempfile.mkdtemp(prefix="pycomp_")
     
     try:
-        # Estrazione
         print(f"[*] Estrazione...")
         with zipfile.ZipFile(zip_file, 'r') as zip_ref:
             zip_ref.extractall(extract_dir)
         
-        # Legge e verifica versione Python
         req_file = os.path.join(extract_dir, "requirements.txt")
         python_requirement = parse_python_version(req_file)
         
@@ -236,10 +197,8 @@ def main():
                     return
                 print()
         
-        # Installa dipendenze (senza venv!)
         install_deps(extract_dir)
         
-        # RUN!
         print(f"\\n[*] Esecuzione {{main_script}}...")
         print("=" * 60)
         original_cwd = os.getcwd()
@@ -249,7 +208,6 @@ def main():
         print("=" * 60)
         
     finally:
-        # Salva e cleanup
         save_changes_back(extract_dir)
         print("[*] Cleanup...")
         shutil.rmtree(extract_dir, ignore_errors=True)
@@ -284,12 +242,14 @@ install_db() {
      cat > "/usr/local/bin/db" << 'EOF'
 #!/bin/bash
 
-# DB Package Manager - Unified package manager for Arch and Kali container
+# DB Package Manager - Unified package manager for Arch, Kali, Debian, Fedora
 # Usage: db [OPERATION] [TARGET] [PACKAGE(S)]
 
 KALI_CONTAINER="kali"
 KALI_ROOT="/var/lib/machines/kali"
-VERSION="3.1.0"
+DEBIAN_ROOT="/var/lib/machines/debian"
+FEDORA_ROOT="/var/lib/machines/fedora"
+VERSION="4.0.0"
 LOG_FILE="/var/log/db-package-manager.log"
 
 # Flags globali
@@ -298,20 +258,22 @@ VERBOSE=false
 
 show_help() {
     echo "DB Package Manager v${VERSION}"
-    echo "Gestore pacchetti unificato per Arch Linux e Kali (systemd-nspawn)"
+    echo "Gestore pacchetti unificato per Arch Linux, Kali, Debian e Fedora (systemd-nspawn)"
     echo
     echo "UTILIZZO:"
     echo "    sudo db [OPZIONI] [OPERAZIONE] [TARGET] [PACCHETTO(I)]"
     echo
     echo "TARGET:"
     echo "    1    - Arch Linux (pacman)"
-    echo "    2    - Kali container (apt in systemd-nspawn)"
+    echo "    2    - Kali container (apt)"
+    echo "    3    - Debian container (apt)"
+    echo "    4    - Fedora container (dnf)"
     echo
     echo "OPERAZIONI INSTALLAZIONE/RIMOZIONE:"
     echo "    -S      - Installa pacchetto/i"
     echo "    -R      - Rimuove pacchetto/i"
     echo "    -Rns    - Rimozione completa (con config e dipendenze)"
-    echo "    -U      - Installa pacchetto locale (.pkg.tar.zst / .deb)"
+    echo "    -U      - Installa pacchetto locale (.pkg.tar.zst / .deb / .rpm)"
     echo "    -Sw     - Scarica pacchetto senza installare"
     echo
     echo "RICERCA E INFO:"
@@ -345,30 +307,23 @@ show_help() {
     echo "    status  - Mostra stato del sistema"
     echo "    backup  - Backup lista pacchetti installati"
     echo "    restore - Restore pacchetti da backup"
-    echo "    diff    - Confronta pacchetti tra Arch e Kali"
+    echo "    diff    - Confronta pacchetti tra i sistemi"
     echo "    fix     - Ripara dipendenze rotte"
     echo
     echo "OPZIONI GLOBALI:"
     echo "    --noconfirm    - Non chiedere conferma"
     echo "    --verbose      - Output dettagliato"
     echo
-    echo "ALTRO:"
-    echo "    -h, --help     - Mostra questo messaggio"
-    echo "    --version      - Mostra versione"
-    echo
     echo "ESEMPI:"
-    echo "    sudo db -S 1 vim neofetch        # Installa vim e neofetch su Arch"
-    echo "    sudo db -S 2 nmap metasploit     # Installa nmap e metasploit su Kali"
-    echo "    sudo db --noconfirm -Syu 1       # Aggiorna Arch senza conferma"
-    echo "    sudo db -Qu 1                    # Lista aggiornamenti disponibili Arch"
-    echo "    sudo db -Qk 2 nmap               # Verifica integrità nmap su Kali"
-    echo "    sudo db -D 1 package             # Marca come dipendenza"
-    echo "    sudo db -De 1 package            # Marca come esplicito"
-    echo "    sudo db -Scc 2                   # Pulizia completa cache Kali"
-    echo "    sudo db backup 1                 # Backup pacchetti Arch"
-    echo "    sudo db restore 1                # Restore pacchetti Arch"
-    echo "    sudo db diff                     # Confronta sistemi"
-    echo "    sudo db fix 2                    # Ripara dipendenze Kali"
+    echo "    sudo db -S 1 vim neofetch        # Installa su Arch"
+    echo "    sudo db -S 2 nmap metasploit     # Installa su Kali"
+    echo "    sudo db -S 3 curl wget           # Installa su Debian"
+    echo "    sudo db -S 4 htop git            # Installa su Fedora"
+    echo "    sudo db --noconfirm -Syu 4       # Aggiorna Fedora senza conferma"
+    echo "    sudo db -Qu 3                    # Lista aggiornamenti Debian"
+    echo "    sudo db status 3                 # Stato sistema Debian"
+    echo "    sudo db fix 4                    # Ripara dipendenze Fedora"
+    echo "    sudo db diff                     # Confronta tutti i sistemi"
 }
 
 show_version() {
@@ -390,9 +345,12 @@ check_root() {
 }
 
 check_container() {
-    if [ ! -d "$KALI_ROOT" ] || [ ! "$(ls -A $KALI_ROOT 2>/dev/null)" ]; then
-        echo "Errore: Kali rootfs non trovato in $KALI_ROOT"
-        echo "Installa con: sudo dbos-setup kali"
+    local root="$1"
+    local name="$2"
+    local setup_cmd="$3"
+    if [ ! -d "$root" ] || [ ! "$(ls -A $root 2>/dev/null)" ]; then
+        echo "Errore: rootfs $name non trovato in $root"
+        echo "Installa con: sudo dbos-setup $setup_cmd"
         exit 1
     fi
 }
@@ -406,11 +364,7 @@ arch_install() {
     echo "[ARCH] Installazione: $@"
     local confirm_flag=""
     [[ "$NOCONFIRM" == true ]] && confirm_flag="--noconfirm"
-    if ! pacman -S $confirm_flag "$@"; then
-        echo "Errore: installazione fallita"
-        log_operation "ARCH: Installazione FALLITA $@"
-        return 1
-    fi
+    pacman -S $confirm_flag "$@" || { log_operation "ARCH: Installazione FALLITA $@"; return 1; }
     log_operation "ARCH: Installazione COMPLETATA $@"
 }
 
@@ -419,11 +373,7 @@ arch_remove() {
     echo "[ARCH] Rimozione: $@"
     local confirm_flag=""
     [[ "$NOCONFIRM" == true ]] && confirm_flag="--noconfirm"
-    if ! pacman -R $confirm_flag "$@"; then
-        echo "Errore: rimozione fallita"
-        log_operation "ARCH: Rimozione FALLITA $@"
-        return 1
-    fi
+    pacman -R $confirm_flag "$@" || { log_operation "ARCH: Rimozione FALLITA $@"; return 1; }
     log_operation "ARCH: Rimozione COMPLETATA $@"
 }
 
@@ -432,11 +382,7 @@ arch_purge() {
     echo "[ARCH] Rimozione completa (con dipendenze): $@"
     local confirm_flag=""
     [[ "$NOCONFIRM" == true ]] && confirm_flag="--noconfirm"
-    if ! pacman -Rns $confirm_flag "$@"; then
-        echo "Errore: rimozione completa fallita"
-        log_operation "ARCH: Rimozione completa FALLITA $@"
-        return 1
-    fi
+    pacman -Rns $confirm_flag "$@" || { log_operation "ARCH: Rimozione completa FALLITA $@"; return 1; }
     log_operation "ARCH: Rimozione completa COMPLETATA $@"
 }
 
@@ -445,444 +391,225 @@ arch_install_local() {
     echo "[ARCH] Installazione locale: $@"
     local confirm_flag=""
     [[ "$NOCONFIRM" == true ]] && confirm_flag="--noconfirm"
-    if ! pacman -U $confirm_flag "$@"; then
-        echo "Errore: installazione locale fallita"
-        log_operation "ARCH: Installazione locale FALLITA $@"
-        return 1
-    fi
+    pacman -U $confirm_flag "$@" || { log_operation "ARCH: Installazione locale FALLITA $@"; return 1; }
     log_operation "ARCH: Installazione locale COMPLETATA $@"
 }
 
 arch_download() {
-    log_operation "ARCH: Download $@"
     echo "[ARCH] Download pacchetto: $@"
     local confirm_flag=""
     [[ "$NOCONFIRM" == true ]] && confirm_flag="--noconfirm"
-    if ! pacman -Sw $confirm_flag "$@"; then
-        echo "Errore: download fallito"
-        return 1
-    fi
+    pacman -Sw $confirm_flag "$@"
 }
 
-arch_search() {
-    echo "[ARCH] Ricerca: $@"
-    pacman -Ss "$@"
-}
-
-arch_update() {
-    log_operation "ARCH: Aggiornamento sistema"
-    echo "[ARCH] Aggiornamento sistema"
-    local confirm_flag=""
-    [[ "$NOCONFIRM" == true ]] && confirm_flag="--noconfirm"
-    if ! pacman -Syu $confirm_flag; then
-        echo "Errore: aggiornamento fallito"
-        log_operation "ARCH: Aggiornamento FALLITO"
-        return 1
-    fi
-    log_operation "ARCH: Aggiornamento COMPLETATO"
-}
-
-arch_refresh() {
-    log_operation "ARCH: Refresh database"
-    echo "[ARCH] Aggiornamento forzato database pacchetti"
-    if ! pacman -Syy; then
-        echo "Errore: aggiornamento database fallito"
-        return 1
-    fi
-}
-
-arch_upgradable() {
-    echo "[ARCH] Pacchetti aggiornabili:"
-    pacman -Qu
-}
-
-arch_info() {
-    echo "[ARCH] Info pacchetto (repository): $@"
-    pacman -Si "$@"
-}
-
-arch_info_installed() {
-    echo "[ARCH] Info pacchetto installato: $@"
-    pacman -Qi "$@"
-}
-
-arch_info_detailed() {
-    echo "[ARCH] Info dettagliate con dipendenze: $@"
-    pacman -Qii "$@"
-}
-
-arch_changelog() {
-    echo "[ARCH] Changelog: $@"
-    pacman -Qc "$@"
-}
-
-arch_list() {
-    echo "[ARCH] Pacchetti installati:"
-    pacman -Q
-}
-
-arch_list_explicit() {
-    echo "[ARCH] Pacchetti installati esplicitamente:"
-    pacman -Qe
-}
-
-arch_foreign() {
-    echo "[ARCH] Pacchetti esterni (AUR/repos esterni):"
-    pacman -Qm
-}
-
-arch_list_files() {
-    echo "[ARCH] File del pacchetto: $@"
-    pacman -Ql "$@"
-}
-
-arch_owns() {
-    echo "[ARCH] Ricerca proprietario: $@"
-    pacman -Qo "$@"
-}
-
-arch_orphans() {
-    echo "[ARCH] Pacchetti orfani:"
-    pacman -Qdt 2>/dev/null || echo "Nessun pacchetto orfano trovato"
-}
-
-arch_check() {
-    echo "[ARCH] Verifica integrità: $@"
-    pacman -Qk "$@"
-}
-
-arch_mark_dep() {
-    log_operation "ARCH: Marca come dipendenza $@"
-    echo "[ARCH] Marca come dipendenza: $@"
-    if ! pacman -D --asdeps "$@"; then
-        echo "Errore: operazione fallita"
-        return 1
-    fi
-}
-
-arch_mark_explicit() {
-    log_operation "ARCH: Marca come esplicito $@"
-    echo "[ARCH] Marca come esplicito: $@"
-    if ! pacman -D --asexplicit "$@"; then
-        echo "Errore: operazione fallita"
-        return 1
-    fi
-}
-
-arch_clean() {
-    log_operation "ARCH: Pulizia cache"
-    echo "[ARCH] Pulizia cache pacchetti"
-    local confirm_flag=""
-    [[ "$NOCONFIRM" == true ]] && confirm_flag="--noconfirm"
-    if ! pacman -Sc $confirm_flag; then
-        echo "Errore: pulizia cache fallita"
-        return 1
-    fi
-}
-
-arch_clean_all() {
-    log_operation "ARCH: Pulizia completa cache"
-    echo "[ARCH] Pulizia COMPLETA cache (rimuove tutto)"
-    local confirm_flag=""
-    [[ "$NOCONFIRM" == true ]] && confirm_flag="--noconfirm"
-    if ! pacman -Scc $confirm_flag; then
-        echo "Errore: pulizia completa cache fallita"
-        return 1
-    fi
-}
+arch_search()         { echo "[ARCH] Ricerca: $@"; pacman -Ss "$@"; }
+arch_update()         { log_operation "ARCH: Aggiornamento"; echo "[ARCH] Aggiornamento sistema"; local f=""; [[ "$NOCONFIRM" == true ]] && f="--noconfirm"; pacman -Syu $f; }
+arch_refresh()        { echo "[ARCH] Refresh database"; pacman -Syy; }
+arch_upgradable()     { echo "[ARCH] Pacchetti aggiornabili:"; pacman -Qu; }
+arch_info()           { echo "[ARCH] Info repository: $@"; pacman -Si "$@"; }
+arch_info_installed() { echo "[ARCH] Info installato: $@"; pacman -Qi "$@"; }
+arch_info_detailed()  { echo "[ARCH] Info dettagliate: $@"; pacman -Qii "$@"; }
+arch_changelog()      { echo "[ARCH] Changelog: $@"; pacman -Qc "$@"; }
+arch_list()           { echo "[ARCH] Pacchetti installati:"; pacman -Q; }
+arch_list_explicit()  { echo "[ARCH] Pacchetti espliciti:"; pacman -Qe; }
+arch_foreign()        { echo "[ARCH] Pacchetti esterni (AUR):"; pacman -Qm; }
+arch_list_files()     { echo "[ARCH] File del pacchetto: $@"; pacman -Ql "$@"; }
+arch_owns()           { echo "[ARCH] Proprietario: $@"; pacman -Qo "$@"; }
+arch_orphans()        { echo "[ARCH] Pacchetti orfani:"; pacman -Qdt 2>/dev/null || echo "Nessun orfano"; }
+arch_check()          { echo "[ARCH] Verifica integrità: $@"; pacman -Qk "$@"; }
+arch_mark_dep()       { echo "[ARCH] Marca come dipendenza: $@"; pacman -D --asdeps "$@"; }
+arch_mark_explicit()  { echo "[ARCH] Marca come esplicito: $@"; pacman -D --asexplicit "$@"; }
+arch_clean()          { echo "[ARCH] Pulizia cache"; local f=""; [[ "$NOCONFIRM" == true ]] && f="--noconfirm"; pacman -Sc $f; }
+arch_clean_all()      { echo "[ARCH] Pulizia COMPLETA cache"; local f=""; [[ "$NOCONFIRM" == true ]] && f="--noconfirm"; pacman -Scc $f; }
+arch_fix()            { echo "[ARCH] Riparazione sistema"; pacman -Syy; pacman -S --noconfirm archlinux-keyring; pacman-key --populate archlinux; }
 
 arch_status() {
     echo "[ARCH] Stato sistema:"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "Pacchetti installati: $(pacman -Q | wc -l)"
-    echo "Pacchetti espliciti: $(pacman -Qe | wc -l)"
-    echo "Pacchetti esterni (AUR): $(pacman -Qm 2>/dev/null | wc -l)"
-    local updates=$(pacman -Qu 2>/dev/null | wc -l)
-    echo "Aggiornamenti disponibili: $updates"
-    local orphans=$(pacman -Qdt 2>/dev/null | wc -l)
-    echo "Pacchetti orfani: $orphans"
-    echo "Cache size: $(du -sh /var/cache/pacman/pkg 2>/dev/null | cut -f1)"
+    echo "Pacchetti espliciti:  $(pacman -Qe | wc -l)"
+    echo "Pacchetti AUR:        $(pacman -Qm 2>/dev/null | wc -l)"
+    echo "Aggiornamenti:        $(pacman -Qu 2>/dev/null | wc -l)"
+    echo "Orfani:               $(pacman -Qdt 2>/dev/null | wc -l)"
+    echo "Cache:                $(du -sh /var/cache/pacman/pkg 2>/dev/null | cut -f1)"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 }
 
 # ============================================================================
-# OPERAZIONI KALI (apt in container)
+# OPERAZIONI KALI / DEBIAN (apt — funzioni condivise con root parametrico)
 # ============================================================================
 
-kali_install() {
-    log_operation "KALI: Installazione $@"
-    echo "[KALI] Installazione: $@"
-    if ! systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "
-        export DEBIAN_FRONTEND=noninteractive
-        apt-get update
-        apt-get install -y $@
-    "; then
-        echo "Errore: installazione fallita"
-        log_operation "KALI: Installazione FALLITA $@"
-        return 1
-    fi
-    log_operation "KALI: Installazione COMPLETATA $@"
+_apt_nspawn() {
+    local root="$1"; local machine="$2"; shift 2
+    systemd-nspawn --directory="$root" --machine="$machine" /bin/bash -c "$@"
 }
 
-kali_remove() {
-    log_operation "KALI: Rimozione $@"
-    echo "[KALI] Rimozione: $@"
-    if ! systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "
-        export DEBIAN_FRONTEND=noninteractive
-        apt-get remove -y $@
-    "; then
-        echo "Errore: rimozione fallita"
-        log_operation "KALI: Rimozione FALLITA $@"
-        return 1
-    fi
-    log_operation "KALI: Rimozione COMPLETATA $@"
+apt_install() {
+    local root="$1"; local machine="$2"; local label="$3"; shift 3
+    log_operation "$label: Installazione $@"
+    echo "[$label] Installazione: $@"
+    _apt_nspawn "$root" "$machine" "export DEBIAN_FRONTEND=noninteractive; apt-get update && apt-get install -y $@" \
+        || { log_operation "$label: Installazione FALLITA $@"; return 1; }
+    log_operation "$label: Installazione COMPLETATA $@"
 }
 
-kali_purge() {
-    log_operation "KALI: Rimozione completa $@"
-    echo "[KALI] Rimozione completa (con config): $@"
-    if ! systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "
-        export DEBIAN_FRONTEND=noninteractive
-        apt-get purge -y $@
-        apt-get autoremove -y
-    "; then
-        echo "Errore: rimozione completa fallita"
-        log_operation "KALI: Rimozione completa FALLITA $@"
-        return 1
-    fi
-    log_operation "KALI: Rimozione completa COMPLETATA $@"
+apt_remove() {
+    local root="$1"; local machine="$2"; local label="$3"; shift 3
+    log_operation "$label: Rimozione $@"
+    echo "[$label] Rimozione: $@"
+    _apt_nspawn "$root" "$machine" "export DEBIAN_FRONTEND=noninteractive; apt-get remove -y $@" \
+        || { log_operation "$label: Rimozione FALLITA $@"; return 1; }
+    log_operation "$label: Rimozione COMPLETATA $@"
 }
 
-kali_install_local() {
-    log_operation "KALI: Installazione locale $@"
-    echo "[KALI] Installazione locale: $@"
-    
-    # Stringa per salvare i nomi dei file
+apt_purge() {
+    local root="$1"; local machine="$2"; local label="$3"; shift 3
+    log_operation "$label: Rimozione completa $@"
+    echo "[$label] Rimozione completa: $@"
+    _apt_nspawn "$root" "$machine" "export DEBIAN_FRONTEND=noninteractive; apt-get purge -y $@ && apt-get autoremove -y" \
+        || { log_operation "$label: Purge FALLITA $@"; return 1; }
+    log_operation "$label: Purge COMPLETATA $@"
+}
+
+apt_install_local() {
+    local root="$1"; local machine="$2"; local label="$3"; shift 3
+    log_operation "$label: Installazione locale $@"
+    echo "[$label] Installazione locale: $@"
     local deb_files=""
-    
-    # Copia file .deb nel container (usa /root invece di /tmp)
     for pkg in "$@"; do
-        # Converti percorso relativo in assoluto se necessario
-        local full_path
-        if [[ "$pkg" = /* ]]; then
-            full_path="$pkg"
-        else
-            full_path="$(pwd)/$pkg"
-        fi
-        
-        if [[ ! -f "$full_path" ]]; then
-            echo "Errore: file $full_path non trovato"
-            return 1
-        fi
-        
-        local basename_file=$(basename "$full_path")
-        echo "Copia $full_path → $KALI_ROOT/root/$basename_file"
-        cp "$full_path" "$KALI_ROOT/root/"
-        deb_files="$deb_files /root/$basename_file"
+        local full_path; [[ "$pkg" = /* ]] && full_path="$pkg" || full_path="$(pwd)/$pkg"
+        [[ ! -f "$full_path" ]] && { echo "Errore: file $full_path non trovato"; return 1; }
+        local bname=$(basename "$full_path")
+        cp "$full_path" "$root/root/"
+        deb_files="$deb_files /root/$bname"
     done
-    
-    # Installa i pacchetti (usa percorso assoluto /root/)
-    if ! systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "
-        export DEBIAN_FRONTEND=noninteractive
-        dpkg -i $deb_files
-        apt-get install -f -y
-        rm -f $deb_files
-    "; then
-        echo "Errore: installazione locale fallita"
-        log_operation "KALI: Installazione locale FALLITA $@"
-        return 1
-    fi
-    log_operation "KALI: Installazione locale COMPLETATA $@"
+    _apt_nspawn "$root" "$machine" "export DEBIAN_FRONTEND=noninteractive; dpkg -i $deb_files; apt-get install -f -y; rm -f $deb_files" \
+        || { log_operation "$label: Installazione locale FALLITA"; return 1; }
+    log_operation "$label: Installazione locale COMPLETATA"
 }
 
-kali_download() {
-    log_operation "KALI: Download $@"
-    echo "[KALI] Download pacchetto: $@"
-    if ! systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "
-        export DEBIAN_FRONTEND=noninteractive
-        apt-get update
-        apt-get install --download-only -y $@
-    "; then
-        echo "Errore: download fallito"
-        return 1
-    fi
+apt_download() {
+    local root="$1"; local machine="$2"; local label="$3"; shift 3
+    echo "[$label] Download: $@"
+    _apt_nspawn "$root" "$machine" "export DEBIAN_FRONTEND=noninteractive; apt-get update && apt-get install --download-only -y $@"
 }
 
-kali_search() {
-    echo "[KALI] Ricerca: $@"
-    systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "apt-cache search $@"
-}
+apt_search()         { local r="$1" m="$2" l="$3"; shift 3; echo "[$l] Ricerca: $@"; _apt_nspawn "$r" "$m" "apt-cache search $@"; }
+apt_update()         { local r="$1" m="$2" l="$3"; log_operation "$l: Aggiornamento"; echo "[$l] Aggiornamento"; _apt_nspawn "$r" "$m" "export DEBIAN_FRONTEND=noninteractive; apt-get update && apt-get upgrade -y && apt-get dist-upgrade -y && apt-get autoremove -y && apt-get autoclean"; }
+apt_refresh()        { local r="$1" m="$2" l="$3"; echo "[$l] Refresh database"; _apt_nspawn "$r" "$m" "apt-get update"; }
+apt_upgradable()     { local r="$1" m="$2" l="$3"; echo "[$l] Pacchetti aggiornabili:"; _apt_nspawn "$r" "$m" "apt-get update > /dev/null 2>&1; apt list --upgradable 2>/dev/null"; }
+apt_info()           { local r="$1" m="$2" l="$3"; shift 3; echo "[$l] Info repository: $@"; _apt_nspawn "$r" "$m" "apt-cache show $@"; }
+apt_info_installed() { local r="$1" m="$2" l="$3"; shift 3; echo "[$l] Info installato: $@"; _apt_nspawn "$r" "$m" "dpkg -s $@"; }
+apt_info_detailed()  { local r="$1" m="$2" l="$3"; shift 3; echo "[$l] Info dettagliate: $@"; _apt_nspawn "$r" "$m" "apt-cache show $@ && echo '' && echo '=== DIPENDENZE ===' && apt-cache depends $@ && echo '' && echo '=== REVERSE ===' && apt-cache rdepends $@"; }
+apt_changelog()      { local r="$1" m="$2" l="$3"; shift 3; echo "[$l] Changelog: $@"; _apt_nspawn "$r" "$m" "apt-get changelog $@"; }
+apt_list()           { local r="$1" m="$2" l="$3"; echo "[$l] Pacchetti installati:"; _apt_nspawn "$r" "$m" "dpkg -l"; }
+apt_list_explicit()  { local r="$1" m="$2" l="$3"; echo "[$l] Pacchetti manuali:"; _apt_nspawn "$r" "$m" "apt-mark showmanual"; }
+apt_foreign()        { local r="$1" m="$2" l="$3"; echo "[$l] Pacchetti esterni:"; _apt_nspawn "$r" "$m" "aptitude search '~i!~O${l}' 2>/dev/null || echo 'aptitude non installato'"; }
+apt_list_files()     { local r="$1" m="$2" l="$3"; shift 3; echo "[$l] File del pacchetto: $@"; _apt_nspawn "$r" "$m" "dpkg -L $@"; }
+apt_owns()           { local r="$1" m="$2" l="$3"; shift 3; echo "[$l] Proprietario: $@"; _apt_nspawn "$r" "$m" "dpkg -S $@"; }
+apt_orphans()        { local r="$1" m="$2" l="$3"; echo "[$l] Pacchetti orfani:"; _apt_nspawn "$r" "$m" "command -v deborphan &>/dev/null && deborphan || echo 'Installa deborphan: sudo db -S $TARGET deborphan'"; }
+apt_check()          { local r="$1" m="$2" l="$3"; shift 3; echo "[$l] Verifica integrità: $@"; _apt_nspawn "$r" "$m" "command -v debsums &>/dev/null && debsums -c $@ || echo 'Installa debsums: sudo db -S $TARGET debsums'"; }
+apt_mark_dep()       { local r="$1" m="$2" l="$3"; shift 3; echo "[$l] Marca come automatico: $@"; _apt_nspawn "$r" "$m" "apt-mark auto $@"; }
+apt_mark_explicit()  { local r="$1" m="$2" l="$3"; shift 3; echo "[$l] Marca come manuale: $@"; _apt_nspawn "$r" "$m" "apt-mark manual $@"; }
+apt_clean()          { local r="$1" m="$2" l="$3"; echo "[$l] Pulizia cache"; _apt_nspawn "$r" "$m" "apt-get clean && apt-get autoclean && apt-get autoremove -y"; }
+apt_clean_all()      { local r="$1" m="$2" l="$3"; echo "[$l] Pulizia COMPLETA cache"; _apt_nspawn "$r" "$m" "apt-get clean && rm -rf /var/cache/apt/archives/* && apt-get autoremove -y --purge"; }
+apt_fix()            { local r="$1" m="$2" l="$3"; log_operation "$l: Fix dipendenze"; echo "[$l] Riparazione dipendenze rotte"; _apt_nspawn "$r" "$m" "export DEBIAN_FRONTEND=noninteractive; apt-get update && apt-get install -f -y && dpkg --configure -a && apt-get autoremove -y"; }
 
-kali_update() {
-    log_operation "KALI: Aggiornamento sistema"
-    echo "[KALI] Aggiornamento sistema"
-    if ! systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "
-        export DEBIAN_FRONTEND=noninteractive
-        apt-get update
-        apt-get upgrade -y
-        apt-get dist-upgrade -y
-        apt-get autoremove -y
-        apt-get autoclean
-    "; then
-        echo "Errore: aggiornamento fallito"
-        log_operation "KALI: Aggiornamento FALLITO"
-        return 1
-    fi
-    log_operation "KALI: Aggiornamento COMPLETATO"
-}
-
-kali_refresh() {
-    log_operation "KALI: Refresh database"
-    echo "[KALI] Aggiornamento database pacchetti"
-    if ! systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "apt-get update"; then
-        echo "Errore: aggiornamento database fallito"
-        return 1
-    fi
-}
-
-kali_upgradable() {
-    echo "[KALI] Pacchetti aggiornabili:"
-    systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "
-        apt-get update > /dev/null 2>&1
-        apt list --upgradable 2>/dev/null
-    "
-}
-
-kali_info() {
-    echo "[KALI] Info pacchetto (repository): $@"
-    systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "apt-cache show $@"
-}
-
-kali_info_installed() {
-    echo "[KALI] Info pacchetto installato: $@"
-    systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "dpkg -s $@"
-}
-
-kali_info_detailed() {
-    echo "[KALI] Info dettagliate con dipendenze: $@"
-    systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "
-        apt-cache show $@
-        echo ''
-        echo '=== DIPENDENZE ==='
-        apt-cache depends $@
-        echo ''
-        echo '=== REVERSE DEPENDENCIES ==='
-        apt-cache rdepends $@
-    "
-}
-
-kali_changelog() {
-    echo "[KALI] Changelog: $@"
-    systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "apt-get changelog $@"
-}
-
-kali_list() {
-    echo "[KALI] Pacchetti installati:"
-    systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "dpkg -l"
-}
-
-kali_list_explicit() {
-    echo "[KALI] Pacchetti installati manualmente:"
-    systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "apt-mark showmanual"
-}
-
-kali_foreign() {
-    echo "[KALI] Pacchetti da sorgenti esterne:"
-    systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "
-        aptitude search '~i!~OKali' 2>/dev/null || echo 'aptitude non installato, usa: sudo db -S 2 aptitude'
-    "
-}
-
-kali_list_files() {
-    echo "[KALI] File del pacchetto: $@"
-    systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "dpkg -L $@"
-}
-
-kali_owns() {
-    echo "[KALI] Ricerca proprietario: $@"
-    systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "dpkg -S $@"
-}
-
-kali_orphans() {
-    echo "[KALI] Pacchetti orfani:"
-    systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "
-        if command -v deborphan &> /dev/null; then
-            deborphan
-        else
-            echo 'deborphan non installato. Installa con: sudo db -S 2 deborphan'
-        fi
-    "
-}
-
-kali_check() {
-    echo "[KALI] Verifica integrità: $@"
-    systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "
-        if command -v debsums &> /dev/null; then
-            debsums -c $@
-        else
-            echo 'debsums non installato. Installa con: sudo db -S 2 debsums'
-        fi
-    "
-}
-
-kali_mark_dep() {
-    log_operation "KALI: Marca come dipendenza $@"
-    echo "[KALI] Marca come automatico: $@"
-    systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "apt-mark auto $@"
-}
-
-kali_mark_explicit() {
-    log_operation "KALI: Marca come esplicito $@"
-    echo "[KALI] Marca come manuale: $@"
-    systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "apt-mark manual $@"
-}
-
-kali_clean() {
-    log_operation "KALI: Pulizia cache"
-    echo "[KALI] Pulizia cache pacchetti"
-    if ! systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "
-        apt-get clean
-        apt-get autoclean
-        apt-get autoremove -y
-    "; then
-        echo "Errore: pulizia cache fallita"
-        return 1
-    fi
-}
-
-kali_clean_all() {
-    log_operation "KALI: Pulizia completa cache"
-    echo "[KALI] Pulizia COMPLETA cache (rimuove tutto)"
-    systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "
-        apt-get clean
-        rm -rf /var/cache/apt/archives/*
-        apt-get autoremove -y --purge
-    "
-}
-
-kali_fix() {
-    log_operation "KALI: Fix dipendenze rotte"
-    echo "[KALI] Riparazione dipendenze rotte"
-    systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "
-        export DEBIAN_FRONTEND=noninteractive
-        apt-get update
-        apt-get install -f -y
-        dpkg --configure -a
-        apt-get autoremove -y
-    "
-}
-
-kali_status() {
-    echo "[KALI] Stato sistema:"
-    systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "
+apt_status() {
+    local root="$1"; local machine="$2"; local label="$3"
+    echo "[$label] Stato sistema:"
+    _apt_nspawn "$root" "$machine" "
         echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
         echo \"Pacchetti installati: \$(dpkg -l | grep ^ii | wc -l)\"
-        echo \"Pacchetti manuali: \$(apt-mark showmanual | wc -l)\"
+        echo \"Pacchetti manuali:    \$(apt-mark showmanual | wc -l)\"
         apt-get update > /dev/null 2>&1
-        updates=\$(apt list --upgradable 2>/dev/null | grep -c upgradable)
-        echo \"Aggiornamenti disponibili: \$updates\"
-        cache_size=\$(du -sh /var/cache/apt/archives 2>/dev/null | cut -f1)
-        echo \"Cache size: \$cache_size\"
+        echo \"Aggiornamenti:        \$(apt list --upgradable 2>/dev/null | grep -c upgradable)\"
+        echo \"Cache:                \$(du -sh /var/cache/apt/archives 2>/dev/null | cut -f1)\"
+        echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+    "
+}
+
+# ============================================================================
+# OPERAZIONI FEDORA (dnf)
+# ============================================================================
+
+_dnf_nspawn() {
+    local root="$1"; shift
+    systemd-nspawn --directory="$root" --machine=fedora-pkg /bin/bash -c "$@"
+}
+
+dnf_install() {
+    log_operation "FEDORA: Installazione $@"
+    echo "[FEDORA] Installazione: $@"
+    local y_flag="-y"; [[ "$NOCONFIRM" == false ]] && y_flag=""
+    _dnf_nspawn "$FEDORA_ROOT" "dnf install $y_flag $@" \
+        || { log_operation "FEDORA: Installazione FALLITA $@"; return 1; }
+    log_operation "FEDORA: Installazione COMPLETATA $@"
+}
+
+dnf_remove() {
+    log_operation "FEDORA: Rimozione $@"
+    echo "[FEDORA] Rimozione: $@"
+    local y_flag="-y"; [[ "$NOCONFIRM" == false ]] && y_flag=""
+    _dnf_nspawn "$FEDORA_ROOT" "dnf remove $y_flag $@" \
+        || { log_operation "FEDORA: Rimozione FALLITA $@"; return 1; }
+    log_operation "FEDORA: Rimozione COMPLETATA $@"
+}
+
+dnf_purge() {
+    log_operation "FEDORA: Rimozione completa $@"
+    echo "[FEDORA] Rimozione completa: $@"
+    local y_flag="-y"; [[ "$NOCONFIRM" == false ]] && y_flag=""
+    _dnf_nspawn "$FEDORA_ROOT" "dnf remove $y_flag $@ && dnf autoremove $y_flag" \
+        || { log_operation "FEDORA: Purge FALLITA $@"; return 1; }
+    log_operation "FEDORA: Purge COMPLETATA $@"
+}
+
+dnf_install_local() {
+    log_operation "FEDORA: Installazione locale $@"
+    echo "[FEDORA] Installazione locale: $@"
+    local rpm_files=""
+    for pkg in "$@"; do
+        local full_path; [[ "$pkg" = /* ]] && full_path="$pkg" || full_path="$(pwd)/$pkg"
+        [[ ! -f "$full_path" ]] && { echo "Errore: file $full_path non trovato"; return 1; }
+        local bname=$(basename "$full_path")
+        cp "$full_path" "$FEDORA_ROOT/root/"
+        rpm_files="$rpm_files /root/$bname"
+    done
+    _dnf_nspawn "$FEDORA_ROOT" "dnf install -y $rpm_files && rm -f $rpm_files" \
+        || { log_operation "FEDORA: Installazione locale FALLITA"; return 1; }
+    log_operation "FEDORA: Installazione locale COMPLETATA"
+}
+
+dnf_download()       { echo "[FEDORA] Download: $@"; _dnf_nspawn "$FEDORA_ROOT" "dnf download $@"; }
+dnf_search()         { echo "[FEDORA] Ricerca: $@"; _dnf_nspawn "$FEDORA_ROOT" "dnf search $@"; }
+dnf_update()         { log_operation "FEDORA: Aggiornamento"; echo "[FEDORA] Aggiornamento sistema"; local y="-y"; [[ "$NOCONFIRM" == false ]] && y=""; _dnf_nspawn "$FEDORA_ROOT" "dnf update $y && dnf autoremove $y"; }
+dnf_refresh()        { echo "[FEDORA] Refresh metadata"; _dnf_nspawn "$FEDORA_ROOT" "dnf makecache --refresh"; }
+dnf_upgradable()     { echo "[FEDORA] Pacchetti aggiornabili:"; _dnf_nspawn "$FEDORA_ROOT" "dnf check-update; true"; }
+dnf_info()           { echo "[FEDORA] Info repository: $@"; _dnf_nspawn "$FEDORA_ROOT" "dnf info $@"; }
+dnf_info_installed() { echo "[FEDORA] Info installato: $@"; _dnf_nspawn "$FEDORA_ROOT" "rpm -qi $@"; }
+dnf_info_detailed()  { echo "[FEDORA] Info dettagliate: $@"; _dnf_nspawn "$FEDORA_ROOT" "dnf info $@ && echo '' && echo '=== DIPENDENZE ===' && rpm -qR $@ && echo '' && echo '=== REVERSE ===' && dnf repoquery --whatrequires $@"; }
+dnf_changelog()      { echo "[FEDORA] Changelog: $@"; _dnf_nspawn "$FEDORA_ROOT" "dnf changelog $@ 2>/dev/null || rpm -q --changelog $@"; }
+dnf_list()           { echo "[FEDORA] Pacchetti installati:"; _dnf_nspawn "$FEDORA_ROOT" "rpm -qa --queryformat '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}\n' | sort"; }
+dnf_list_explicit()  { echo "[FEDORA] Pacchetti installati esplicitamente:"; _dnf_nspawn "$FEDORA_ROOT" "dnf repoquery --userinstalled"; }
+dnf_foreign()        { echo "[FEDORA] Pacchetti da repo esterni:"; _dnf_nspawn "$FEDORA_ROOT" "dnf list extras 2>/dev/null"; }
+dnf_list_files()     { echo "[FEDORA] File del pacchetto: $@"; _dnf_nspawn "$FEDORA_ROOT" "rpm -ql $@"; }
+dnf_owns()           { echo "[FEDORA] Proprietario: $@"; _dnf_nspawn "$FEDORA_ROOT" "rpm -qf $@"; }
+dnf_orphans()        { echo "[FEDORA] Pacchetti orfani:"; _dnf_nspawn "$FEDORA_ROOT" "dnf repoquery --unneeded"; }
+dnf_check()          { echo "[FEDORA] Verifica integrità: $@"; _dnf_nspawn "$FEDORA_ROOT" "rpm -V $@"; }
+dnf_mark_dep()       { echo "[FEDORA] Marca come dipendenza: $@"; _dnf_nspawn "$FEDORA_ROOT" "dnf mark remove $@"; }
+dnf_mark_explicit()  { echo "[FEDORA] Marca come esplicito: $@"; _dnf_nspawn "$FEDORA_ROOT" "dnf mark install $@"; }
+dnf_clean()          { echo "[FEDORA] Pulizia cache"; _dnf_nspawn "$FEDORA_ROOT" "dnf clean packages && dnf autoremove -y"; }
+dnf_clean_all()      { echo "[FEDORA] Pulizia COMPLETA cache"; _dnf_nspawn "$FEDORA_ROOT" "dnf clean all && dnf autoremove -y"; }
+dnf_fix()            { log_operation "FEDORA: Fix dipendenze"; echo "[FEDORA] Riparazione dipendenze rotte"; _dnf_nspawn "$FEDORA_ROOT" "dnf check && dnf distro-sync -y && rpm --rebuilddb"; }
+
+dnf_status() {
+    echo "[FEDORA] Stato sistema:"
+    _dnf_nspawn "$FEDORA_ROOT" "
+        echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+        echo \"Pacchetti installati: \$(rpm -qa | wc -l)\"
+        echo \"Aggiornamenti:        \$(dnf check-update 2>/dev/null | grep -c '^[a-zA-Z]' || true)\"
+        echo \"Cache:                \$(du -sh /var/cache/dnf 2>/dev/null | cut -f1)\"
         echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
     "
 }
@@ -893,85 +620,70 @@ kali_status() {
 
 backup_packages() {
     log_operation "Backup pacchetti target=$1"
-    if [[ "$1" == "1" ]]; then
-        echo "[ARCH] Backup pacchetti espliciti..."
-        pacman -Qe > /root/arch-packages-$(date +%Y%m%d).txt
-        echo "✓ Backup salvato in: /root/arch-packages-$(date +%Y%m%d).txt"
-    else
-        check_container
-        echo "[KALI] Backup pacchetti manuali..."
-        systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "
-            apt-mark showmanual > /root/kali-packages-$(date +%Y%m%d).txt
-        "
-        cp "$KALI_ROOT/root/kali-packages-$(date +%Y%m%d).txt" /root/
-        echo "✓ Backup salvato in: /root/kali-packages-$(date +%Y%m%d).txt"
-    fi
+    local date_str=$(date +%Y%m%d)
+    case "$1" in
+        1) echo "[ARCH] Backup..."; pacman -Qe > /root/arch-packages-$date_str.txt; echo "✓ /root/arch-packages-$date_str.txt" ;;
+        2) check_container "$KALI_ROOT" "Kali" "kali"
+           _apt_nspawn "$KALI_ROOT" "kali-pkg" "apt-mark showmanual > /root/kali-packages-$date_str.txt"
+           cp "$KALI_ROOT/root/kali-packages-$date_str.txt" /root/
+           echo "✓ /root/kali-packages-$date_str.txt" ;;
+        3) check_container "$DEBIAN_ROOT" "Debian" "debian"
+           _apt_nspawn "$DEBIAN_ROOT" "debian-pkg" "apt-mark showmanual > /root/debian-packages-$date_str.txt"
+           cp "$DEBIAN_ROOT/root/debian-packages-$date_str.txt" /root/
+           echo "✓ /root/debian-packages-$date_str.txt" ;;
+        4) check_container "$FEDORA_ROOT" "Fedora" "fedora"
+           _dnf_nspawn "$FEDORA_ROOT" "dnf repoquery --userinstalled --queryformat '%{name}' > /root/fedora-packages-$date_str.txt"
+           cp "$FEDORA_ROOT/root/fedora-packages-$date_str.txt" /root/
+           echo "✓ /root/fedora-packages-$date_str.txt" ;;
+        *) echo "Errore: target non valido (1=Arch, 2=Kali, 3=Debian, 4=Fedora)"; exit 1 ;;
+    esac
 }
 
 restore_packages() {
     log_operation "Restore pacchetti target=$1"
-    if [[ "$1" == "1" ]]; then
-        if [[ ! -f "$2" ]]; then
-            echo "Errore: file backup non trovato: $2"
-            echo "Usa: sudo db restore 1 /root/arch-packages-YYYYMMDD.txt"
-            exit 1
-        fi
-        echo "[ARCH] Restore pacchetti da: $2"
-        echo "Pacchetti da installare:"
-        cat "$2" | awk '{print $1}'
-        read -p "Procedere? [s/N] " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Ss]$ ]]; then
-            pacman -S --needed --noconfirm $(cat "$2" | awk '{print $1}')
-            echo "✓ Restore completato"
-        fi
-    else
-        check_container
-        if [[ ! -f "$2" ]]; then
-            echo "Errore: file backup non trovato: $2"
-            echo "Usa: sudo db restore 2 /root/kali-packages-YYYYMMDD.txt"
-            exit 1
-        fi
-        echo "[KALI] Restore pacchetti da: $2"
-        echo "Pacchetti da installare:"
-        cat "$2"
-        read -p "Procedere? [s/N] " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Ss]$ ]]; then
-            cp "$2" "$KALI_ROOT/tmp/restore-packages.txt"
-            systemd-nspawn --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "
-                export DEBIAN_FRONTEND=noninteractive
-                apt-get update
-                xargs apt-get install -y < /tmp/restore-packages.txt
-                rm /tmp/restore-packages.txt
-            "
-            echo "✓ Restore completato"
-        fi
-    fi
+    [[ ! -f "$2" ]] && { echo "Errore: file backup non trovato: $2"; exit 1; }
+    echo "Pacchetti da installare:"; cat "$2"
+    read -p "Procedere? [s/N] " -n 1 -r; echo
+    [[ ! $REPLY =~ ^[Ss]$ ]] && { echo "Annullato"; exit 0; }
+    case "$1" in
+        1) pacman -S --needed --noconfirm $(cat "$2" | awk '{print $1}') ;;
+        2) check_container "$KALI_ROOT" "Kali" "kali"
+           cp "$2" "$KALI_ROOT/tmp/restore.txt"
+           _apt_nspawn "$KALI_ROOT" "kali-pkg" "export DEBIAN_FRONTEND=noninteractive; apt-get update && xargs apt-get install -y < /tmp/restore.txt && rm /tmp/restore.txt" ;;
+        3) check_container "$DEBIAN_ROOT" "Debian" "debian"
+           cp "$2" "$DEBIAN_ROOT/tmp/restore.txt"
+           _apt_nspawn "$DEBIAN_ROOT" "debian-pkg" "export DEBIAN_FRONTEND=noninteractive; apt-get update && xargs apt-get install -y < /tmp/restore.txt && rm /tmp/restore.txt" ;;
+        4) check_container "$FEDORA_ROOT" "Fedora" "fedora"
+           cp "$2" "$FEDORA_ROOT/tmp/restore.txt"
+           _dnf_nspawn "$FEDORA_ROOT" "xargs dnf install -y < /tmp/restore.txt && rm /tmp/restore.txt" ;;
+        *) echo "Errore: target non valido"; exit 1 ;;
+    esac
+    echo "✓ Restore completato"
 }
 
 diff_packages() {
-    log_operation "Diff pacchetti Arch vs Kali"
-    echo "Confronto pacchetti tra Arch e Kali"
+    log_operation "Diff pacchetti"
+    echo "Confronto pacchetti tra i sistemi installati"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    
-    local arch_count=$(pacman -Q | wc -l)
-    echo "Arch - Pacchetti totali: $arch_count"
-    
-    check_container
-    local kali_count=$(systemd-nspawn --quiet --directory="$KALI_ROOT" --machine=kali-pkg /bin/bash -c "dpkg -l | grep ^ii | wc -l")
-    echo "Kali - Pacchetti totali: $kali_count"
-    
+    echo "Arch:   $(pacman -Q | wc -l) pacchetti"
+    [ -d "$KALI_ROOT" ]   && echo "Kali:   $(systemd-nspawn --quiet --directory="$KALI_ROOT"   --machine=kali-diff   /bin/bash -c "dpkg -l | grep ^ii | wc -l" 2>/dev/null) pacchetti" || echo "Kali:   non installato"
+    [ -d "$DEBIAN_ROOT" ] && echo "Debian: $(systemd-nspawn --quiet --directory="$DEBIAN_ROOT" --machine=debian-diff /bin/bash -c "dpkg -l | grep ^ii | wc -l" 2>/dev/null) pacchetti" || echo "Debian: non installato"
+    [ -d "$FEDORA_ROOT" ] && echo "Fedora: $(systemd-nspawn --quiet --directory="$FEDORA_ROOT" --machine=fedora-diff /bin/bash -c "rpm -qa | wc -l" 2>/dev/null) pacchetti"           || echo "Fedora: non installato"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "Differenza: $((arch_count - kali_count)) pacchetti"
 }
 
-arch_fix() {
-    log_operation "ARCH: Fix sistema"
-    echo "[ARCH] Riparazione sistema"
-    pacman -Syy
-    pacman -S --noconfirm archlinux-keyring
-    pacman-key --populate archlinux
+# ============================================================================
+# HELPER: mappa TARGET → parametri
+# ============================================================================
+
+get_target_params() {
+    case "$1" in
+        1) echo "arch" ;;
+        2) echo "apt $KALI_ROOT kali-pkg KALI" ;;
+        3) echo "apt $DEBIAN_ROOT debian-pkg DEBIAN" ;;
+        4) echo "dnf" ;;
+        *) echo "invalid" ;;
+    esac
 }
 
 # ============================================================================
@@ -979,358 +691,246 @@ arch_fix() {
 # ============================================================================
 
 main() {
-    # Array per salvare gli argomenti originali
-    local ORIGINAL_ARGS=("$@")
-    
-    # Parse opzioni globali PRIMA di tutto
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --noconfirm)
-                NOCONFIRM=true
-                shift
-                ;;
-            --verbose)
-                VERBOSE=true
-                shift
-                ;;
-            *)
-                break
-                ;;
+            --noconfirm) NOCONFIRM=true; shift ;;
+            --verbose)   VERBOSE=true;   shift ;;
+            *) break ;;
         esac
     done
 
-    if [[ $# -lt 1 ]]; then
-        show_help
-        exit 1
-    fi
-
-    # Gestione --version
-    if [[ "$1" == "--version" ]]; then
-        show_version
-        exit 0
-    fi
+    [[ $# -lt 1 ]] && { show_help; exit 1; }
+    [[ "$1" == "--version" ]] && { show_version; exit 0; }
 
     check_root
 
     OPERATION=$1
-    
-    # Gestione comandi speciali
+
+    # Comandi speciali (non richiedono TARGET come secondo argomento)
     case "$OPERATION" in
-        status)
-            if [[ $# -lt 2 ]]; then
-                echo "Errore: specifica target (1=Arch, 2=Kali)"
-                exit 1
-            fi
+        status|fix)
+            [[ $# -lt 2 ]] && { echo "Errore: specifica target (1=Arch, 2=Kali, 3=Debian, 4=Fedora)"; exit 1; }
             TARGET=$2
-            if [[ "$TARGET" == "2" ]]; then
-                check_container
-                kali_status
-            elif [[ "$TARGET" == "1" ]]; then
-                arch_status
-            else
-                echo "Errore: target non valido"
-                exit 1
-            fi
-            exit 0
-            ;;
+            case "$TARGET" in
+                1) [[ "$OPERATION" == "status" ]] && arch_status  || arch_fix ;;
+                2) check_container "$KALI_ROOT"   "Kali"   "kali";   [[ "$OPERATION" == "status" ]] && apt_status  "$KALI_ROOT"   "kali-pkg"   "KALI"   || apt_fix  "$KALI_ROOT"   "kali-pkg"   "KALI"   ;;
+                3) check_container "$DEBIAN_ROOT" "Debian" "debian"; [[ "$OPERATION" == "status" ]] && apt_status  "$DEBIAN_ROOT" "debian-pkg" "DEBIAN" || apt_fix  "$DEBIAN_ROOT" "debian-pkg" "DEBIAN" ;;
+                4) check_container "$FEDORA_ROOT" "Fedora" "fedora"; [[ "$OPERATION" == "status" ]] && dnf_status  || dnf_fix ;;
+                *) echo "Errore: target non valido"; exit 1 ;;
+            esac
+            exit 0 ;;
         backup)
-            if [[ $# -lt 2 ]]; then
-                echo "Errore: specifica target (1=Arch, 2=Kali)"
-                exit 1
-            fi
-            backup_packages $2
-            exit 0
-            ;;
+            [[ $# -lt 2 ]] && { echo "Errore: specifica target"; exit 1; }
+            backup_packages $2; exit 0 ;;
         restore)
-            if [[ $# -lt 3 ]]; then
-                echo "Errore: specifica target e file backup"
-                echo "Uso: sudo db restore [1|2] /path/to/backup.txt"
-                exit 1
-            fi
-            restore_packages $2 $3
-            exit 0
-            ;;
-        diff)
-            diff_packages
-            exit 0
-            ;;
-        fix)
-            if [[ $# -lt 2 ]]; then
-                echo "Errore: specifica target (1=Arch, 2=Kali)"
-                exit 1
-            fi
-            TARGET=$2
-            if [[ "$TARGET" == "2" ]]; then
-                check_container
-                kali_fix
-            elif [[ "$TARGET" == "1" ]]; then
-                arch_fix
-            else
-                echo "Errore: target non valido"
-                exit 1
-            fi
-            exit 0
-            ;;
+            [[ $# -lt 3 ]] && { echo "Uso: sudo db restore [1|2|3|4] /path/backup.txt"; exit 1; }
+            restore_packages $2 $3; exit 0 ;;
+        diff) diff_packages; exit 0 ;;
+        -h|--help) show_help; exit 0 ;;
     esac
 
-    if [[ $# -lt 2 ]]; then
-        show_help
-        exit 1
-    fi
-
+    [[ $# -lt 2 ]] && { show_help; exit 1; }
     TARGET=$2
     shift 2
     PACKAGES="$@"
 
-    # Validazione target
-    if [[ "$TARGET" != "1" && "$TARGET" != "2" ]]; then
-        echo "Errore: target non valido. Usa 1 (Arch) o 2 (Kali)"
-        exit 1
-    fi
+    # Validazione e check container
+    case "$TARGET" in
+        1) ;;
+        2) check_container "$KALI_ROOT"   "Kali"   "kali"   ;;
+        3) check_container "$DEBIAN_ROOT" "Debian" "debian" ;;
+        4) check_container "$FEDORA_ROOT" "Fedora" "fedora" ;;
+        *) echo "Errore: target non valido. Usa 1 (Arch), 2 (Kali), 3 (Debian), 4 (Fedora)"; exit 1 ;;
+    esac
 
-    # Check container se target è Kali
-    if [[ "$TARGET" == "2" ]]; then
-        check_container
-    fi
-
-    # Esegui operazione
+    # Dispatch operazione
     case "$OPERATION" in
         -S)
-            if [[ -z "$PACKAGES" ]]; then
-                echo "Errore: specifica almeno un pacchetto"
-                exit 1
-            fi
-            if [[ "$TARGET" == "1" ]]; then
-                arch_install $PACKAGES
-            else
-                kali_install $PACKAGES
-            fi
-            ;;
+            [[ -z "$PACKAGES" ]] && { echo "Errore: specifica almeno un pacchetto"; exit 1; }
+            case "$TARGET" in
+                1) arch_install $PACKAGES ;;
+                2) apt_install  "$KALI_ROOT"   "kali-pkg"   "KALI"   $PACKAGES ;;
+                3) apt_install  "$DEBIAN_ROOT" "debian-pkg" "DEBIAN" $PACKAGES ;;
+                4) dnf_install  $PACKAGES ;;
+            esac ;;
         -R)
-            if [[ -z "$PACKAGES" ]]; then
-                echo "Errore: specifica almeno un pacchetto"
-                exit 1
-            fi
-            if [[ "$TARGET" == "1" ]]; then
-                arch_remove $PACKAGES
-            else
-                kali_remove $PACKAGES
-            fi
-            ;;
+            [[ -z "$PACKAGES" ]] && { echo "Errore: specifica almeno un pacchetto"; exit 1; }
+            case "$TARGET" in
+                1) arch_remove $PACKAGES ;;
+                2) apt_remove  "$KALI_ROOT"   "kali-pkg"   "KALI"   $PACKAGES ;;
+                3) apt_remove  "$DEBIAN_ROOT" "debian-pkg" "DEBIAN" $PACKAGES ;;
+                4) dnf_remove  $PACKAGES ;;
+            esac ;;
         -Rns)
-            if [[ -z "$PACKAGES" ]]; then
-                echo "Errore: specifica almeno un pacchetto"
-                exit 1
-            fi
-            if [[ "$TARGET" == "1" ]]; then
-                arch_purge $PACKAGES
-            else
-                kali_purge $PACKAGES
-            fi
-            ;;
+            [[ -z "$PACKAGES" ]] && { echo "Errore: specifica almeno un pacchetto"; exit 1; }
+            case "$TARGET" in
+                1) arch_purge $PACKAGES ;;
+                2) apt_purge  "$KALI_ROOT"   "kali-pkg"   "KALI"   $PACKAGES ;;
+                3) apt_purge  "$DEBIAN_ROOT" "debian-pkg" "DEBIAN" $PACKAGES ;;
+                4) dnf_purge  $PACKAGES ;;
+            esac ;;
         -U)
-            if [[ -z "$PACKAGES" ]]; then
-                echo "Errore: specifica almeno un file pacchetto"
-                exit 1
-            fi
-            if [[ "$TARGET" == "1" ]]; then
-                arch_install_local $PACKAGES
-            else
-                kali_install_local $PACKAGES
-            fi
-            ;;
+            [[ -z "$PACKAGES" ]] && { echo "Errore: specifica almeno un file"; exit 1; }
+            case "$TARGET" in
+                1) arch_install_local $PACKAGES ;;
+                2) apt_install_local  "$KALI_ROOT"   "kali-pkg"   "KALI"   $PACKAGES ;;
+                3) apt_install_local  "$DEBIAN_ROOT" "debian-pkg" "DEBIAN" $PACKAGES ;;
+                4) dnf_install_local  $PACKAGES ;;
+            esac ;;
         -Sw)
-            if [[ -z "$PACKAGES" ]]; then
-                echo "Errore: specifica almeno un pacchetto"
-                exit 1
-            fi
-            if [[ "$TARGET" == "1" ]]; then
-                arch_download $PACKAGES
-            else
-                kali_download $PACKAGES
-            fi
-            ;;
+            [[ -z "$PACKAGES" ]] && { echo "Errore: specifica almeno un pacchetto"; exit 1; }
+            case "$TARGET" in
+                1) arch_download $PACKAGES ;;
+                2) apt_download  "$KALI_ROOT"   "kali-pkg"   "KALI"   $PACKAGES ;;
+                3) apt_download  "$DEBIAN_ROOT" "debian-pkg" "DEBIAN" $PACKAGES ;;
+                4) dnf_download  $PACKAGES ;;
+            esac ;;
         -Ss)
-            if [[ -z "$PACKAGES" ]]; then
-                echo "Errore: specifica un termine di ricerca"
-                exit 1
-            fi
-            if [[ "$TARGET" == "1" ]]; then
-                arch_search $PACKAGES
-            else
-                kali_search $PACKAGES
-            fi
-            ;;
+            [[ -z "$PACKAGES" ]] && { echo "Errore: specifica un termine di ricerca"; exit 1; }
+            case "$TARGET" in
+                1) arch_search $PACKAGES ;;
+                2) apt_search  "$KALI_ROOT"   "kali-pkg"   "KALI"   $PACKAGES ;;
+                3) apt_search  "$DEBIAN_ROOT" "debian-pkg" "DEBIAN" $PACKAGES ;;
+                4) dnf_search  $PACKAGES ;;
+            esac ;;
         -Syu)
-            if [[ "$TARGET" == "1" ]]; then
-                arch_update
-            else
-                kali_update
-            fi
-            ;;
+            case "$TARGET" in
+                1) arch_update ;;
+                2) apt_update  "$KALI_ROOT"   "kali-pkg"   "KALI"   ;;
+                3) apt_update  "$DEBIAN_ROOT" "debian-pkg" "DEBIAN" ;;
+                4) dnf_update  ;;
+            esac ;;
         -Syy)
-            if [[ "$TARGET" == "1" ]]; then
-                arch_refresh
-            else
-                kali_refresh
-            fi
-            ;;
+            case "$TARGET" in
+                1) arch_refresh ;;
+                2) apt_refresh  "$KALI_ROOT"   "kali-pkg"   "KALI"   ;;
+                3) apt_refresh  "$DEBIAN_ROOT" "debian-pkg" "DEBIAN" ;;
+                4) dnf_refresh  ;;
+            esac ;;
         -Qu)
-            if [[ "$TARGET" == "1" ]]; then
-                arch_upgradable
-            else
-                kali_upgradable
-            fi
-            ;;
+            case "$TARGET" in
+                1) arch_upgradable ;;
+                2) apt_upgradable  "$KALI_ROOT"   "kali-pkg"   "KALI"   ;;
+                3) apt_upgradable  "$DEBIAN_ROOT" "debian-pkg" "DEBIAN" ;;
+                4) dnf_upgradable  ;;
+            esac ;;
         -Si)
-            if [[ -z "$PACKAGES" ]]; then
-                echo "Errore: specifica un pacchetto"
-                exit 1
-            fi
-            if [[ "$TARGET" == "1" ]]; then
-                arch_info $PACKAGES
-            else
-                kali_info $PACKAGES
-            fi
-            ;;
+            [[ -z "$PACKAGES" ]] && { echo "Errore: specifica un pacchetto"; exit 1; }
+            case "$TARGET" in
+                1) arch_info $PACKAGES ;;
+                2) apt_info  "$KALI_ROOT"   "kali-pkg"   "KALI"   $PACKAGES ;;
+                3) apt_info  "$DEBIAN_ROOT" "debian-pkg" "DEBIAN" $PACKAGES ;;
+                4) dnf_info  $PACKAGES ;;
+            esac ;;
         -Qi)
-            if [[ -z "$PACKAGES" ]]; then
-                echo "Errore: specifica un pacchetto"
-                exit 1
-            fi
-            if [[ "$TARGET" == "1" ]]; then
-                arch_info_installed $PACKAGES
-            else
-                kali_info_installed $PACKAGES
-            fi
-            ;;
+            [[ -z "$PACKAGES" ]] && { echo "Errore: specifica un pacchetto"; exit 1; }
+            case "$TARGET" in
+                1) arch_info_installed $PACKAGES ;;
+                2) apt_info_installed  "$KALI_ROOT"   "kali-pkg"   "KALI"   $PACKAGES ;;
+                3) apt_info_installed  "$DEBIAN_ROOT" "debian-pkg" "DEBIAN" $PACKAGES ;;
+                4) dnf_info_installed  $PACKAGES ;;
+            esac ;;
         -Qii)
-            if [[ -z "$PACKAGES" ]]; then
-                echo "Errore: specifica un pacchetto"
-                exit 1
-            fi
-            if [[ "$TARGET" == "1" ]]; then
-                arch_info_detailed $PACKAGES
-            else
-                kali_info_detailed $PACKAGES
-            fi
-            ;;
+            [[ -z "$PACKAGES" ]] && { echo "Errore: specifica un pacchetto"; exit 1; }
+            case "$TARGET" in
+                1) arch_info_detailed $PACKAGES ;;
+                2) apt_info_detailed  "$KALI_ROOT"   "kali-pkg"   "KALI"   $PACKAGES ;;
+                3) apt_info_detailed  "$DEBIAN_ROOT" "debian-pkg" "DEBIAN" $PACKAGES ;;
+                4) dnf_info_detailed  $PACKAGES ;;
+            esac ;;
         -Qc)
-            if [[ -z "$PACKAGES" ]]; then
-                echo "Errore: specifica un pacchetto"
-                exit 1
-            fi
-            if [[ "$TARGET" == "1" ]]; then
-                arch_changelog $PACKAGES
-            else
-                kali_changelog $PACKAGES
-            fi
-            ;;
+            [[ -z "$PACKAGES" ]] && { echo "Errore: specifica un pacchetto"; exit 1; }
+            case "$TARGET" in
+                1) arch_changelog $PACKAGES ;;
+                2) apt_changelog  "$KALI_ROOT"   "kali-pkg"   "KALI"   $PACKAGES ;;
+                3) apt_changelog  "$DEBIAN_ROOT" "debian-pkg" "DEBIAN" $PACKAGES ;;
+                4) dnf_changelog  $PACKAGES ;;
+            esac ;;
         -Q)
-            if [[ "$TARGET" == "1" ]]; then
-                arch_list
-            else
-                kali_list
-            fi
-            ;;
+            case "$TARGET" in
+                1) arch_list ;;
+                2) apt_list  "$KALI_ROOT"   "kali-pkg"   "KALI"   ;;
+                3) apt_list  "$DEBIAN_ROOT" "debian-pkg" "DEBIAN" ;;
+                4) dnf_list  ;;
+            esac ;;
         -Qe)
-            if [[ "$TARGET" == "1" ]]; then
-                arch_list_explicit
-            else
-                kali_list_explicit
-            fi
-            ;;
+            case "$TARGET" in
+                1) arch_list_explicit ;;
+                2) apt_list_explicit  "$KALI_ROOT"   "kali-pkg"   "KALI"   ;;
+                3) apt_list_explicit  "$DEBIAN_ROOT" "debian-pkg" "DEBIAN" ;;
+                4) dnf_list_explicit  ;;
+            esac ;;
         -Qm)
-            if [[ "$TARGET" == "1" ]]; then
-                arch_foreign
-            else
-                kali_foreign
-            fi
-            ;;
+            case "$TARGET" in
+                1) arch_foreign ;;
+                2) apt_foreign  "$KALI_ROOT"   "kali-pkg"   "KALI"   ;;
+                3) apt_foreign  "$DEBIAN_ROOT" "debian-pkg" "DEBIAN" ;;
+                4) dnf_foreign  ;;
+            esac ;;
         -Ql)
-            if [[ -z "$PACKAGES" ]]; then
-                echo "Errore: specifica un pacchetto"
-                exit 1
-            fi
-            if [[ "$TARGET" == "1" ]]; then
-                arch_list_files $PACKAGES
-            else
-                kali_list_files $PACKAGES
-            fi
-            ;;
+            [[ -z "$PACKAGES" ]] && { echo "Errore: specifica un pacchetto"; exit 1; }
+            case "$TARGET" in
+                1) arch_list_files $PACKAGES ;;
+                2) apt_list_files  "$KALI_ROOT"   "kali-pkg"   "KALI"   $PACKAGES ;;
+                3) apt_list_files  "$DEBIAN_ROOT" "debian-pkg" "DEBIAN" $PACKAGES ;;
+                4) dnf_list_files  $PACKAGES ;;
+            esac ;;
         -Qo)
-            if [[ -z "$PACKAGES" ]]; then
-                echo "Errore: specifica un file"
-                exit 1
-            fi
-            if [[ "$TARGET" == "1" ]]; then
-                arch_owns $PACKAGES
-            else
-                kali_owns $PACKAGES
-            fi
-            ;;
+            [[ -z "$PACKAGES" ]] && { echo "Errore: specifica un file"; exit 1; }
+            case "$TARGET" in
+                1) arch_owns $PACKAGES ;;
+                2) apt_owns  "$KALI_ROOT"   "kali-pkg"   "KALI"   $PACKAGES ;;
+                3) apt_owns  "$DEBIAN_ROOT" "debian-pkg" "DEBIAN" $PACKAGES ;;
+                4) dnf_owns  $PACKAGES ;;
+            esac ;;
         -Qdt)
-            if [[ "$TARGET" == "1" ]]; then
-                arch_orphans
-            else
-                kali_orphans
-            fi
-            ;;
+            case "$TARGET" in
+                1) arch_orphans ;;
+                2) apt_orphans  "$KALI_ROOT"   "kali-pkg"   "KALI"   ;;
+                3) apt_orphans  "$DEBIAN_ROOT" "debian-pkg" "DEBIAN" ;;
+                4) dnf_orphans  ;;
+            esac ;;
         -Qk)
-            if [[ -z "$PACKAGES" ]]; then
-                echo "Errore: specifica un pacchetto"
-                exit 1
-            fi
-            if [[ "$TARGET" == "1" ]]; then
-                arch_check $PACKAGES
-            else
-                kali_check $PACKAGES
-            fi
-            ;;
+            [[ -z "$PACKAGES" ]] && { echo "Errore: specifica un pacchetto"; exit 1; }
+            case "$TARGET" in
+                1) arch_check $PACKAGES ;;
+                2) apt_check  "$KALI_ROOT"   "kali-pkg"   "KALI"   $PACKAGES ;;
+                3) apt_check  "$DEBIAN_ROOT" "debian-pkg" "DEBIAN" $PACKAGES ;;
+                4) dnf_check  $PACKAGES ;;
+            esac ;;
         -D)
-            if [[ -z "$PACKAGES" ]]; then
-                echo "Errore: specifica almeno un pacchetto"
-                exit 1
-            fi
-            if [[ "$TARGET" == "1" ]]; then
-                arch_mark_dep $PACKAGES
-            else
-                kali_mark_dep $PACKAGES
-            fi
-            ;;
+            [[ -z "$PACKAGES" ]] && { echo "Errore: specifica almeno un pacchetto"; exit 1; }
+            case "$TARGET" in
+                1) arch_mark_dep $PACKAGES ;;
+                2) apt_mark_dep  "$KALI_ROOT"   "kali-pkg"   "KALI"   $PACKAGES ;;
+                3) apt_mark_dep  "$DEBIAN_ROOT" "debian-pkg" "DEBIAN" $PACKAGES ;;
+                4) dnf_mark_dep  $PACKAGES ;;
+            esac ;;
         -De)
-            if [[ -z "$PACKAGES" ]]; then
-                echo "Errore: specifica almeno un pacchetto"
-                exit 1
-            fi
-            if [[ "$TARGET" == "1" ]]; then
-                arch_mark_explicit $PACKAGES
-            else
-                kali_mark_explicit $PACKAGES
-            fi
-            ;;
+            [[ -z "$PACKAGES" ]] && { echo "Errore: specifica almeno un pacchetto"; exit 1; }
+            case "$TARGET" in
+                1) arch_mark_explicit $PACKAGES ;;
+                2) apt_mark_explicit  "$KALI_ROOT"   "kali-pkg"   "KALI"   $PACKAGES ;;
+                3) apt_mark_explicit  "$DEBIAN_ROOT" "debian-pkg" "DEBIAN" $PACKAGES ;;
+                4) dnf_mark_explicit  $PACKAGES ;;
+            esac ;;
         -Sc)
-            if [[ "$TARGET" == "1" ]]; then
-                arch_clean
-            else
-                kali_clean
-            fi
-            ;;
+            case "$TARGET" in
+                1) arch_clean ;;
+                2) apt_clean  "$KALI_ROOT"   "kali-pkg"   "KALI"   ;;
+                3) apt_clean  "$DEBIAN_ROOT" "debian-pkg" "DEBIAN" ;;
+                4) dnf_clean  ;;
+            esac ;;
         -Scc)
-            if [[ "$TARGET" == "1" ]]; then
-                arch_clean_all
-            else
-                kali_clean_all
-            fi
-            ;;
-        -h|--help)
-            show_help
-            ;;
+            case "$TARGET" in
+                1) arch_clean_all ;;
+                2) apt_clean_all  "$KALI_ROOT"   "kali-pkg"   "KALI"   ;;
+                3) apt_clean_all  "$DEBIAN_ROOT" "debian-pkg" "DEBIAN" ;;
+                4) dnf_clean_all  ;;
+            esac ;;
         *)
             echo "Errore: operazione '$OPERATION' non riconosciuta"
-            show_help
-            exit 1
-            ;;
+            show_help; exit 1 ;;
     esac
 }
 
@@ -1347,14 +947,13 @@ update() {
     install_db
     sudo chmod +x /usr/local/bin/db
     install_pycompress
-    echo -e "\e[32m[db v3.1.0 installed]\e[0m"
+    echo -e "\e[32m[db v4.0.0 installed]\e[0m"
 
     echo "$VERSIONE_UPDATE" > "$VERSION_FILE"
     echo "Completato!"
 }
 
 auto_delete() {
-    # Crea uno script che si cancella DA SOLO
     cat > "/tmp/dbos-cleanup-$$" << EOF
 #!/bin/bash
 sleep 1
@@ -1386,7 +985,6 @@ else
     mkdir -p /usr/local/share
     echo "$VERSIONE_UPDATE" > "$VERSION_FILE"
     install_db 
-    
 fi
 
 # Auto-cancellazione
