@@ -711,16 +711,16 @@ EOF
 
 update() { 
     echo "Aggiornamento in corso..."
-    if [-f "/usr/local/bin/db"]; then
-        sudo rm /usr/local/bin
+    if [ -f "/usr/local/bin/db" ]; then          
+        sudo rm /usr/local/bin/db                 
         echo -e "\e[32m[old db removed]\e[0m"
+    fi                                            
     install_db
     sudo chmod +x /usr/local/bin/db
     echo -e "\e[32m[db v5.0.0 installed]\e[0m"
-
     echo "$VERSIONE_UPDATE" > "$VERSION_FILE"
     echo "Completato!"
-}
+}                                                 
 
 auto_delete() {
     cat > "/tmp/dbos-cleanup-$$" << EOF
