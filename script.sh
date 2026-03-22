@@ -2,7 +2,7 @@
 set -e
 
 VERSION_FILE="/usr/local/share/dbos-v.txt"
-VERSIONE_UPDATE="0.7"
+VERSIONE_UPDATE="0.8"
 SCRIPT_PATH="$(realpath "$0")"
 
 
