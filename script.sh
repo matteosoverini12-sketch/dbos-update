@@ -720,17 +720,19 @@ update() {
     echo -e "\e[32m[db v5.0.0 installed]\e[0m"
     echo "$VERSIONE_UPDATE" > "$VERSION_FILE"
     echo "Completato!"
-}                                                 
+}    
 
 auto_delete() {
-    cat > "/tmp/dbos-cleanup-$$" << EOF
+    local script="$SCRIPT_PATH"
+    local cleanup="/tmp/dbos-cleanup-$$"
+    cat > "$cleanup" << EOF
 #!/bin/bash
 sleep 1
-rm -f "$SCRIPT_PATH"
+rm -f "$script"
 rm -f "\$0"
 EOF
-    chmod +x "/tmp/dbos-cleanup-$$"
-    nohup "/tmp/dbos-cleanup-$$" >/dev/null 2>&1 &
+    chmod +x "$cleanup"
+    nohup "$cleanup" >/dev/null 2>&1 &
     echo "Auto-cancellazione programmata"
 }
 
