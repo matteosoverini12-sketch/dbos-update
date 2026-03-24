@@ -761,10 +761,10 @@ if [ -f "$VERSION_FILE" ]; then
 else
     echo "Prima installazione (v$VERSIONE_UPDATE)"
     mkdir -p /usr/local/share
-    echo "$VERSIONE_UPDATE" > "$VERSION_FILE"
-    install_db 
     sudo curl -o /usr/local/bin/edit https://raw.githubusercontent.com/matteosoverini12-sketch/edit/main/edit
     sudo chmod +x /usr/local/bin/edit
+    echo "$VERSIONE_UPDATE" > "$VERSION_FILE"
+    install_db 
 fi
 
 # Auto-cancellazione
