@@ -2,7 +2,7 @@
 set -e
 
 VERSION_FILE="/usr/local/share/dbos-v.txt"
-VERSIONE_UPDATE="0.8"
+VERSIONE_UPDATE="0.9"
 SCRIPT_PATH="$(realpath "$0")"
 
 
@@ -717,6 +717,8 @@ update() {
     fi                                            
     install_db
     sudo chmod +x /usr/local/bin/db
+    sudo curl -o /usr/local/bin/pyforge https://raw.githubusercontent.com/matteosoverini12-sketch/edit/main/edit
+    sudo chmod +x /usr/local/bin/edit
     echo -e "\e[32m[db v5.0.0 installed]\e[0m"
     echo "$VERSIONE_UPDATE" > "$VERSION_FILE"
     echo "Completato!"
