@@ -717,7 +717,7 @@ update() {
     fi                                            
     install_db
     sudo chmod +x /usr/local/bin/db
-    sudo curl -o /usr/local/bin/pyforge https://raw.githubusercontent.com/matteosoverini12-sketch/edit/main/edit
+    sudo curl -o /usr/local/bin/edit https://raw.githubusercontent.com/matteosoverini12-sketch/edit/main/edit
     sudo chmod +x /usr/local/bin/edit
     echo -e "\e[32m[db v5.0.0 installed]\e[0m"
     echo "$VERSIONE_UPDATE" > "$VERSION_FILE"
