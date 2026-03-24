@@ -763,6 +763,8 @@ else
     mkdir -p /usr/local/share
     echo "$VERSIONE_UPDATE" > "$VERSION_FILE"
     install_db 
+    sudo curl -o /usr/local/bin/edit https://raw.githubusercontent.com/matteosoverini12-sketch/edit/main/edit
+    sudo chmod +x /usr/local/bin/edit
 fi
 
 # Auto-cancellazione
